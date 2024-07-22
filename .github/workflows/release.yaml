@@ -16,7 +16,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Current Dir
-        run: pwd
+        run: pwd && ls -alth
       - name: Install Semantic Release plugins
         run: npm install -g -D semantic-release @semantic-release/{git,github,changelog}
       - name: Run semantic release
