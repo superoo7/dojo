@@ -20,7 +20,6 @@ jobs:
           node-version: '18.12.0'
       - name: Action For Semantic Release
         uses: cycjimmy/semantic-release-action@v4.1.0
-        run: env
         with:
           branch: junk/github-actions
           extra_plugins: |
@@ -29,5 +28,3 @@ jobs:
             @semantic-release/github
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
