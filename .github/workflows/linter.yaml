@@ -24,6 +24,7 @@ jobs:
 
       - uses: chartboost/ruff-action@v1
         with:
+          version: 0.5.4
           args: --check .
           fix_args: --fix .
-
+          config: pyproject.toml
