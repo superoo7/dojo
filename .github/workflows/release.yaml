@@ -10,7 +10,6 @@ jobs:
   release:
     name: Release
     runs-on: self-hosted
-#    container: hoppr/semantic-release
     permissions:
       contents: write
     steps:
@@ -22,7 +21,7 @@ jobs:
       - name: Action For Semantic Release
         uses: cycjimmy/semantic-release-action@v4.1.0
         with:
-          branch: junk/github-actions
+          branch: main
           extra_plugins: |
             @semantic-release/changelog
             @semantic-release/git
