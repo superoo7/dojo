@@ -1,4 +1,4 @@
-name: Dojo Build
+name: Dojo Release
 
 on:
   push:
@@ -20,6 +20,7 @@ jobs:
           node-version: '18.12.0'
       - name: Action For Semantic Release
         uses: cycjimmy/semantic-release-action@v4.1.0
+        run: env
         with:
           branch: junk/github-actions
           extra_plugins: |
