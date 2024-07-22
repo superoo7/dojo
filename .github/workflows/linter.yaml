@@ -1,12 +1,14 @@
 name: Run Linter
 
 on:
- pull_request:
-   branches:
-     - dev
-     - staging
-     - main
-     - junk/github-actions
+  push:
+    branches: [ "junk/github-actions" ]
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - main
+      - junk/github-actions
 
 jobs:
   lint:
