@@ -2,7 +2,8 @@ name: Run Release
 
 on:
   push:
-    branches: [ "junk/github-actions" ]
+    branches:
+      - main
 
 jobs:
   release:
