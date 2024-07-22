@@ -8,7 +8,6 @@ on:
       - dev
       - staging
       - main
-      - junk/github-actions
 
 jobs:
   lint:
@@ -28,6 +27,6 @@ jobs:
       - uses: chartboost/ruff-action@v1
         with:
           version: 0.4.10
-          args: --check .
+          args: 'format --check'
           fix_args: --fix .
           config: pyproject.toml
