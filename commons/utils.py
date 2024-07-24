@@ -132,7 +132,7 @@ def initialise(
     logger.info(f"Metagraph: {metagraph}")
     # The axon handles request processing, allowing validators to send this miner requests.
     axon = bt.axon(wallet=wallet, port=config.axon.port)
-    logger.info(f"Axon: {axon}")
+    # logger.info(f"Axon: {axon}")
     return wallet, subtensor, metagraph, axon
 
 

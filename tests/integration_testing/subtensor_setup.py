@@ -40,7 +40,7 @@ wallet_path = os.path.join(script_dir, ".bittensor", "wallets")
 base_args = [
     "--no_prompt",
     "--wallet.path",
-    wallet_path,
+    default_wallet_path,
     "--subtensor.network",
     subtensor_network,
 ]

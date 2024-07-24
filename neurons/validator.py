@@ -270,6 +270,9 @@ class Validator(BaseNeuron):
                     nodes=list(self._active_miner_uids),
                 ).get_target_uids(key=request_id, k=get_config().neuron.sample_size)
 
+            logger.info(f"sel_miner_uids..... {sel_miner_uids}")
+            logger.info(f"_active_miner_uids..... {self._active_miner_uids}")
+
         axons = [
             self.metagraph.axons[uid]
             for uid in sel_miner_uids
@@ -282,6 +285,7 @@ class Validator(BaseNeuron):
 
         if synapse is None:
             data = await SyntheticAPI.get_qa()
+            print(f"data.... {data.prompt}")
             if not data:
                 logger.error("Failed to generate data from synthetic gen API")
                 return
@@ -317,16 +321,23 @@ class Validator(BaseNeuron):
         # map obfuscated model names back to the original model names
         logger.debug(f"Obfuscated model map: {obfuscated_model_to_model}")
         valid_miner_responses: List[FeedbackRequest] = []
+        logger.info(f"miner_responses: ..... {miner_responses}")
         try:
             for miner_response in miner_responses:
+                logger.info(f"single miner_response {miner_response}")
                 # map obfuscated model names back to the original model names
                 real_model_ids = []
 
                 for i, completion in enumerate(miner_response.responses):
+                    logger.info(
+                        f"obfuscated_model_to_model .... {obfuscated_model_to_model}"
+                    )
                     found_model_id = obfuscated_model_to_model.get(
                         completion.model, None
                     )
+                    logger.info(f"found_model_id...... {found_model_id}")
                     real_model_ids.append(found_model_id)
+                    logger.info(f"real_model_ids..... {real_model_ids}")
                     if found_model_id:
                         miner_response.responses[i].model = found_model_id
                         synapse.responses[i].model = found_model_id
@@ -350,11 +361,13 @@ class Validator(BaseNeuron):
 
                 # update the miner response with the real model ids
                 valid_miner_responses.append(miner_response)
+            logger.info(f"valid_miner_response.....{valid_miner_responses}")
         except Exception as e:
             logger.error(f"Failed to map obfuscated model to original model: {e}")
             pass
 
         dojo_responses = DojoTaskTracker.filter_dojo_responses(valid_miner_responses)
+        logger.info(f"dojo_responses:...... {dojo_responses}")
         logger.debug("Attempting to update task map")
         await DojoTaskTracker.update_task_map(
             synapse.request_id, dojo_responses, obfuscated_model_to_model
