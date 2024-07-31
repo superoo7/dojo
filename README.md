@@ -45,7 +45,7 @@
     - [Requirements for running a validator](#requirements-for-running-a-validator)
     - [Start Validating](#start-validating)
 - [Subnet Mechanisms](#subnet-mechanisms)
-  - [Responsibilties of Miners](#responsibilties-of-miners)
+  - [Responsibilities of Miners](#responsibilities-of-miners)
   - [Responsibilities of Validators](#responsibilities-of-validators)
   - [Task Lifecycle, User Journey and Data Flow](#task-lifecycle-user-journey-and-data-flow)
 - [Scoring Mechanism](#scoring-mechanism)
@@ -146,7 +146,7 @@ Clone the project, set up and configure python virtual environment
 cd /opt
 
 # Clone the project
-git clone https://github.com/tensorplex-labs/dojo.git
+git clone --recurse-submodules -j$(nproc) https://github.com/tensorplex-labs/dojo.git
 cd dojo/
 
 # Set up python virtual environment and pip packages
@@ -344,7 +344,7 @@ pm2 start run.sh \
 
 # Subnet Mechanisms
 
-## Responsibilties of Miners
+## Responsibilities of Miners
 
 Miners are required to gather Participants to complete tasks. Miners are expected to build and curate their Participant pools to strategically complete Tasks based on domain expertise in order to succeed in the Dojo subnet.
 
