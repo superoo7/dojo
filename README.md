@@ -40,7 +40,10 @@
   - [Validator](#validator-1)
 - [Getting Started](#getting-started)
   - [Mining](#mining)
-    - [Setup Subscription Key for Miners on UI to connect to Dojo Subnet for scoring](#setup-subscription-key-for-miners-on-ui-to-connect-to-dojo-subnet-for-scoring)
+    - [Using pm2](#using-pm2)
+    - [Using docker](#using-docker)
+- [for testnet](#for-testnet)
+  - [Setup Subscription Key for Miners on UI to connect to Dojo Subnet for scoring](#setup-subscription-key-for-miners-on-ui-to-connect-to-dojo-subnet-for-scoring)
   - [Validating](#validating)
     - [Requirements for running a validator](#requirements-for-running-a-validator)
     - [Start Validating](#start-validating)
@@ -227,6 +230,8 @@ DOJO_API_BASE_URL="https://dojo-api-testnet.tensorplex.ai"
 
 Start the miner by running the following commands:
 
+### Using pm2
+
 ```bash
 # For Testnet
 pm2 start main_miner.py \
@@ -240,6 +245,14 @@ pm2 start main_miner.py \
 --neuron.type miner \
 --scoring_method "dojo" \
 --subtensor.network test
+```
+
+### Using docker
+
+# for testnet
+
+```bash
+MINER_ARGS="--netuid 98 --wallet.name coldkey --wallet.hotkey hotkey --logging.debug --axon.port 9602 --neuron.type miner --scoring_method dojo --subtensor.network test" docker compose -f docker-compose-miner.yaml up
 ```
 
 ### Setup Subscription Key for Miners on UI to connect to Dojo Subnet for scoring
