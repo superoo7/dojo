@@ -1,4 +1,12 @@
 services:
+  dojo-ui-builder:
+    build:
+      context: ./dojo-ui
+      dockerfile: ../Dockerfile-build-ui
+    env_file: .env
+    volumes:
+      - ./dojo-ui-build:/build
+
   dojo-worker-api:
     build:
       context: ./dojo-worker-api
@@ -12,14 +20,17 @@ services:
       context: ./dojo-ui
     env_file: .env
     depends_on:
-      - dojo-worker-api
+      dojo-ui-builder:
+        condition: service_completed_successfully
     volumes:
       - ./.env:/dojo-ui/.env:ro
+      - ./dojo-ui-build:/dojo-ui:ro
+      - ./dojo-ui/entrypoint.sh:/dojo-ui/entrypoint.sh:ro
 
   main-miner:
     build:
       context: .
-      dockerfile: ./Dockerfile-miner
+      dockerfile: Dockerfile-miner
     env_file: .env
     command: python main_miner.py ${MINER_ARGS}
     depends_on:
@@ -27,6 +38,5 @@ services:
         condition: service_healthy
       dojo-ui:
         condition: service_healthy
-
     volumes:
       - $HOME/.bittensor:/root/.bittensor
