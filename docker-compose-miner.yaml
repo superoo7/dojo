@@ -1,0 +1,32 @@
+services:
+  dojo-worker-api:
+    build:
+      context: ./dojo-worker-api
+    env_file: .env
+    volumes:
+      # see workdir settings
+      - ./.env:/dojo-api/.env:ro
+
+  dojo-ui:
+    build:
+      context: ./dojo-ui
+    env_file: .env
+    depends_on:
+      - dojo-worker-api
+    volumes:
+      - ./.env:/dojo-ui/.env:ro
+
+  main-miner:
+    build:
+      context: .
+      dockerfile: ./Dockerfile-miner
+    env_file: .env
+    command: python main_miner.py ${MINER_ARGS}
+    depends_on:
+      dojo-worker-api:
+        condition: service_healthy
+      dojo-ui:
+        condition: service_healthy
+
+    volumes:
+      - $HOME/.bittensor:/root/.bittensor
