@@ -1,6 +1,0 @@
-FROM node:21.7.3
-
-WORKDIR /build
-COPY . .
-RUN npm install --force
-RUN NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL npm run build

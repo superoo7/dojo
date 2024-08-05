@@ -1,36 +1,52 @@
 services:
-  dojo-ui-builder:
-    build:
-      context: ./dojo-ui
-      dockerfile: ../Dockerfile-build-ui
-    env_file: .env
-    volumes:
-      - ./dojo-ui-build:/build
+  redis:
+    image: "redis/redis-stack-server:7.4.0-v0"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15.7
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+    healthcheck:
+      test: /usr/bin/pg_isready
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   dojo-worker-api:
     build:
       context: ./dojo-worker-api
-    env_file: .env
+    env_file: ./.env
     volumes:
       # see workdir settings
-      - ./.env:/dojo-api/.env:ro
+      - ./.env:/dojo-api/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - 8080
 
   dojo-ui:
     build:
       context: ./dojo-ui
-    env_file: .env
-    depends_on:
-      dojo-ui-builder:
-        condition: service_completed_successfully
+      dockerfile: Dockerfile.build
+    env_file: ./.env
     volumes:
-      - ./.env:/dojo-ui/.env:ro
-      - ./dojo-ui-build:/dojo-ui:ro
-      - ./dojo-ui/entrypoint.sh:/dojo-ui/entrypoint.sh:ro
+      - .env:/dojo-ui/.env
+    expose:
+      - 3000:3000
 
   main-miner:
-    build:
-      context: .
-      dockerfile: Dockerfile-miner
+    image: python:3.11
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - $HOME/.bittensor:/root/.bittensor
     env_file: .env
     command: python main_miner.py ${MINER_ARGS}
     depends_on:
@@ -38,5 +54,3 @@ services:
         condition: service_healthy
       dojo-ui:
         condition: service_healthy
-    volumes:
-      - $HOME/.bittensor:/root/.bittensor
