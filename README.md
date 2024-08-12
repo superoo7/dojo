@@ -18,6 +18,8 @@
   ·
   <a href="https://docs.tensorplex.ai/tensorplex-docs/tensorplex-dojo-testnet">Docs</a>
   ·
+  <a href="https://docs.tensorplex.ai/tensorplex-docs/tensorplex-dojo-testnet/whitepaper">Whitepaper</a>
+  ·
   <a href="https://huggingface.co/tensorplex-labs">HuggingFace</a>
   ·
   <a href="#getting-started">Getting Started</a>
@@ -266,8 +268,6 @@ Mainnet: **_REMOVED_**
 - Give your subscription a name, and enter your subscription key generated earlier before running the miner. _*Refer to step 4 of "Getting Started" if you need to retrieve your key*_ ![image](./assets/subscription/enter_details.png)
 - Click "Create" and your subscription will be saved. ![image](./assets/subscription/created_details.png)
 - Confirmed your subscription is created properly, and that you can view your tasks! ![image](./assets/subscription/tasks_shown.png)
-
-Congratulations, you magnificent mining maestro🧙! Grab your virtual pickaxe and let the digital gold rush begin! 🚀🔥
 
 ## Validating
 
