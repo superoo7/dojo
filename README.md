@@ -323,15 +323,7 @@ To start with autoupdate for validators (**optional**)
 
 ```bash
 # Testnet
-pm2 start run.sh \
---interpreter bash \
---name dojo-autoupdater \
--- --wallet.name coldkey \
---wallet.hotkey hotkey \
---logging.debug \
---subtensor.network test \
---neuron.type validator \
---axon.port 9603
+pm2 start auto_update.py --name auto-update-validator -- validator
 ```
 
 # License
