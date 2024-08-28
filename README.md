@@ -129,19 +129,6 @@ To get started as a miner or validator, these are the common steps both a miner 
 >
 > We will utilize ~/opt directory as our preferred location in this guide.
 
-Install PM2 (**If not already installed**)
-
-```bash
-cd dojo/scripts/setup/
-./install_pm2.sh
-```
-
-Install Docker (**If not already installed**)
-
-```bash
-./install_docker.sh
-```
-
 Clone the project, set up and configure python virtual environment
 
 ```bash
@@ -162,6 +149,21 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
+Install PM2 on Linux(**If not already installed**)
+
+```bash
+cd dojo/scripts/setup/
+./install_pm2.sh
+```
+
+
+Install Docker on Linux(**If not already installed**)
+
+```bash
+./install_docker.sh
+```
+
+
 ## Mining
 
 ### Option 1: Self-hosting the miner backend services
@@ -179,7 +181,7 @@ Create your wallets and register them to our subnet
 btcli wallet new_coldkey
 btcli wallet new_hotkey
 
-# register your wallet to our subnet
+# register your wallet to our subnet, ensure that you have some balance in the wallet before proceeding
 # Testnet
 btcli s register --wallet.name coldkey --wallet.hotkey hotkey --netuid 98 --subtensor.network test
 ```
