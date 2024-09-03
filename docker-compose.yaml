@@ -172,7 +172,7 @@ services:
 
   btcli:
     # TODO @dev change back after testing
-    image: dojo-base:dev
+    image: dojo-base:latest
     volumes:
       - ./:/app
       - $HOME/.bittensor:/root/.bittensor
@@ -182,7 +182,7 @@ services:
     stdin_open: true
 
   dojo-cli:
-    image: dojo-base:dev
+    image: dojo-base:latest
     volumes:
       - ./:/app
       - $HOME/.bittensor:/root/.bittensor
@@ -192,7 +192,7 @@ services:
     stdin_open: true
 
   miner-testnet-decentralised:
-    image: dojo-base:dev
+    image: dojo-base:latest
     working_dir: /app
     env_file:
       - .env
@@ -206,9 +206,11 @@ services:
         condition: service_healthy
       worker-ui:
         condition: service_healthy
+    ports:
+      - "8888:8888"
 
   miner-testnet-centralised:
-    image: dojo-base:dev
+    image: dojo-base:latest
     working_dir: /app
     env_file:
       - .env

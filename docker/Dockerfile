@@ -15,4 +15,6 @@ RUN pip install --upgrade pip && pip install -e .
 COPY entrypoints.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoints.sh
 
+EXPOSE 8888
+
 ENTRYPOINT ["entrypoints.sh"]
