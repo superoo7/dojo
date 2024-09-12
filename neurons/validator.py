@@ -30,10 +30,7 @@ from template.protocol import (
     TaskType,
 )
 from template.utils.config import get_config
-from template.utils.uids import (
-    MinerUidSelector,
-    extract_miner_uids,
-)
+from template.utils.uids import MinerUidSelector, extract_miner_uids
 
 
 class Validator(BaseNeuron):
@@ -82,7 +79,9 @@ class Validator(BaseNeuron):
                 logger.debug(
                     f"Scheduled update score and send feedback triggered at time: {time.time()}"
                 )
-                data = await DataManager.load(path=DataManager.get_requests_data_path())
+                data: List[DendriteQueryResponse] | None = await DataManager.load(
+                    path=DataManager.get_requests_data_path()
+                )
                 if not data:
                     logger.debug(
                         "Skipping scoring as no feedback data found, this means either all have been processed or you are running the validator for the first time."
@@ -91,22 +90,22 @@ class Validator(BaseNeuron):
 
                 current_time = get_epoch_time()
                 # allow enough time for human feedback
-                filtered_data = [
+                non_expired_data: List[DendriteQueryResponse] = [
                     d
                     for d in data
                     if (current_time - d.request.epoch_timestamp)
                     >= template.TASK_DEADLINE
                 ]
-                if not filtered_data:
+                if not non_expired_data:
                     logger.warning(
                         "Skipping scoring as no feedback data is due for scoring."
                     )
                     continue
 
                 logger.info(
-                    f"Got {len(filtered_data)} requests past deadline and ready to score"
+                    f"Got {len(non_expired_data)} requests past deadline and ready to score"
                 )
-                for d in filtered_data:
+                for d in non_expired_data:
                     criteria_to_miner_score, hotkey_to_score = Scoring.calculate_score(
                         criteria_types=d.request.criteria_types,
                         request=d.request,
@@ -303,6 +302,7 @@ class Validator(BaseNeuron):
                 ],
                 prompt=data.prompt,
                 responses=data.responses,
+                ground_truth=data.ground_truth,
                 expire_at=expire_at,
             )
         elif external_user:
