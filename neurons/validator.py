@@ -302,7 +302,6 @@ class Validator(BaseNeuron):
                 ],
                 prompt=data.prompt,
                 responses=data.responses,
-                ground_truth=data.ground_truth,
                 expire_at=expire_at,
             )
         elif external_user:
@@ -360,6 +359,9 @@ class Validator(BaseNeuron):
         await DojoTaskTracker.update_task_map(
             synapse.request_id, dojo_responses, obfuscated_model_to_model
         )
+
+        # include the ground_truth to keep in data manager
+        synapse.ground_truth = data.ground_truth
         response_data = DendriteQueryResponse(
             request=synapse,
             miner_responses=valid_miner_responses,
