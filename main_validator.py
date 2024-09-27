@@ -10,6 +10,7 @@ from loguru import logger
 
 from commons.api.middleware import LimitContentLengthMiddleware
 from commons.api.reward_route import reward_router
+from commons.api.threed_gen import threed_gen_router
 from commons.dataset.synthetic import SyntheticAPI
 from commons.human_feedback.dojo import DojoAPI
 from commons.objects import ObjectManager
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 app.add_middleware(LimitContentLengthMiddleware)
 app.include_router(reward_router)
+app.include_router(threed_gen_router)
 
 
 async def main():

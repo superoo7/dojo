@@ -305,6 +305,8 @@ class Validator(BaseNeuron):
                 expire_at=expire_at,
             )
         elif external_user:
+            synapse.request_id = request_id
+            synapse.expire_at = set_expire_time(template.TASK_DEADLINE)
             obfuscated_model_to_model = self.obfuscate_model_names(synapse)
 
         logger.info(
@@ -360,8 +362,9 @@ class Validator(BaseNeuron):
             synapse.request_id, dojo_responses, obfuscated_model_to_model
         )
 
-        # include the ground_truth to keep in data manager
-        synapse.ground_truth = data.ground_truth
+        if not external_user:
+            # include the ground_truth to keep in data manager
+            synapse.ground_truth = data.ground_truth
         response_data = DendriteQueryResponse(
             request=synapse,
             miner_responses=valid_miner_responses,

@@ -7,7 +7,7 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-MAX_CONTENT_LENGTH = 1 * 1024 * 1024
+MAX_CONTENT_LENGTH = 100 * 1024 * 1024
 
 
 class LimitContentLengthMiddleware(BaseHTTPMiddleware):

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Dict, List
 
 import bittensor as bt
+from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from strenum import StrEnum
 
@@ -12,6 +13,7 @@ class TaskType(StrEnum):
     DIALOGUE = "dialogue"
     TEXT_TO_IMAGE = "image"
     CODE_GENERATION = "code_generation"
+    TEXT_TO_THREE_DEEZ = "text_to_3d"
 
 
 class CriteriaTypeEnum(StrEnum):
@@ -69,6 +71,7 @@ CriteriaType = (
 
 
 class ScoringMethod(StrEnum):
+    # not being used
     HF_MODEL = "hf_model"
     LLM_API = "llm_api"
     AWS_MTURK = "aws_mturk"
@@ -99,9 +102,13 @@ class DialogueItem(BaseModel):
     message: str
 
 
+class ThreeDObject(BaseModel):
+    filename: str = Field(description="Name of the 3D object file")
+
+
 class Response(BaseModel):
     model: str = Field(description="Model that generated the completion")
-    completion: CodeAnswer | List[DialogueItem] | str | None = Field(
+    completion: CodeAnswer | List[DialogueItem] | str | ThreeDObject = Field(
         description="Completion from the model"
     )
     cid: str = Field(
@@ -155,6 +162,10 @@ class FeedbackRequest(bt.Synapse):
     ground_truth: dict[str, int] = Field(
         description="Mapping of unique identifiers to their ground truth values",
         default_factory=dict,
+    )
+    files: List[UploadFile] = Field(
+        default_factory=list,
+        description="List of uploaded files",
     )
 
 
