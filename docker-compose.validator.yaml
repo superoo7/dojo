@@ -1,0 +1,188 @@
+volumes:
+  postgres-volume:
+  redis-volume:
+  testnet-lite-volume:
+  dojo-pip-cache:
+  prisma-pip-cache:
+  postgres-validator-volume:
+  prisma-binary:
+
+networks:
+  external:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "0.0.0.0"
+  internal:
+    driver: bridge
+
+services:
+  # ============== COMMON SERVICES ============== #
+
+  redis-service:
+    env_file:
+      - .env.validator
+    image: redis/redis-stack-server:7.4.0-v0
+    environment:
+      # CHANGE THE PASSWORD TO A PASSWORD YOU WANT TO USE
+      REDIS_ARGS: "--requirepass ${REDIS_PASSWORD} --user ${REDIS_USERNAME} on >${REDIS_PASSWORD} ~* allcommands"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    expose:
+      - 6379
+    volumes:
+      - redis-volume:/data
+    networks:
+      - internal
+
+  synthetic-api:
+    image: ghcr.io/tensorplex-labs/dojo-synthetic-api:dev
+    ports:
+      - "127.0.0.1:5003:5003"
+    env_file:
+      - .env.validator
+    environment:
+      - REDIS_HOST=redis-service
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_USERNAME=${REDIS_USERNAME}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      redis-service:
+        condition: service_healthy
+    networks:
+      - internal
+
+  postgres-vali:
+    env_file:
+      - .env.validator
+    image: postgres:15.7
+    environment:
+      POSTGRES_USER: ${DB_USERNAME_VALIDATOR}
+      POSTGRES_PASSWORD: ${DB_PASSWORD_VALIDATOR}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME_VALIDATOR}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5532:5432"
+    expose:
+      - 5432
+    volumes:
+      - postgres-validator-volume:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  prisma-setup-vali:
+    platform: linux/amd64
+    env_file:
+      - .env.validator
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.validator.prisma
+    environment:
+      DB_USERNAME_VALIDATOR: ${DB_USERNAME_VALIDATOR}
+      DB_PASSWORD_VALIDATOR: ${DB_PASSWORD_VALIDATOR}
+      DB_NAME_VALIDATOR: ${DB_NAME_VALIDATOR}
+      DB_HOST_VALIDATOR: ${DB_HOST_VALIDATOR}
+      DATABASE_URL_VALIDATOR: postgresql://${DB_USERNAME_VALIDATOR}:${DB_PASSWORD_VALIDATOR}@${DB_HOST_VALIDATOR}/${DB_NAME_VALIDATOR}
+    working_dir: /app
+    volumes:
+      - prisma-pip-cache:/root/.cache/pip
+      - prisma-binary:/root/prisma-python
+      - ./:/app
+    depends_on:
+      - postgres-vali
+    networks:
+      - internal
+
+  btcli:
+    # TODO @dev change back after testing
+    image: ghcr.io/tensorplex-labs/dojo:dev
+    volumes:
+      - ./:/app
+      - $HOME/.bittensor:/root/.bittensor
+      - dojo-pip-cache:/root/.cache/pip
+    command: ["btcli"]
+    tty: true
+    stdin_open: true
+
+  dojo-cli:
+    image: ghcr.io/tensorplex-labs/dojo:dev
+    volumes:
+      - ./:/app
+      - $HOME/.bittensor:/root/.bittensor
+      - dojo-pip-cache:/root/.cache/pip
+    command: ["dojo-cli"]
+    tty: true
+    stdin_open: true
+    networks:
+      - internal
+
+  # ============== TEST NET ============== #
+
+  validator-testnet:
+    image: ghcr.io/tensorplex-labs/dojo:dev
+    working_dir: /app
+    env_file:
+      - .env.validator
+    volumes:
+      - ./:/app
+      - $HOME/.bittensor:/root/.bittensor
+      - dojo-pip-cache:/root/.cache/pip
+      - prisma-binary:/root/prisma-python
+    command: ["validator"]
+    environment:
+      - NETUID=98
+      - SUBTENSOR_NETWORK=test
+      - SUBTENSOR_ENDPOINT=ws://test.finney.opentensor.ai
+      - PRISMA_QUERY_ENGINE_BINARY=/root/prisma-python/node_modules/prisma/query-engine-debian-openssl-3.0.x
+    depends_on:
+      synthetic-api:
+        condition: service_healthy
+      postgres-vali:
+        condition: service_healthy
+      prisma-setup-vali:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - external
+
+  # ============== MAIN NET ============== #
+
+  validator-mainnet:
+    image: ghcr.io/tensorplex-labs/dojo:main
+    working_dir: /app
+    env_file:
+      - .env.validator
+    volumes:
+      - ./:/app
+      - $HOME/.bittensor:/root/.bittensor
+      - dojo-pip-cache:/root/.cache/pip
+      - prisma-binary:/root/prisma-python
+    command: ["validator"]
+    environment:
+      - PRISMA_QUERY_ENGINE_BINARY=/root/prisma-python/node_modules/prisma/query-engine-debian-openssl-3.0.x
+      - NETUID=51
+      - SUBTENSOR_NETWORK=finney
+      - SUBTENSOR_ENDPOINT=***REMOVED***
+    depends_on:
+      synthetic-api:
+        condition: service_healthy
+      postgres-vali:
+        condition: service_healthy
+      prisma-setup-vali:
+        condition: service_completed_successfully
+
+    networks:
+      - internal
+      - external
