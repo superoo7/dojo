@@ -2,11 +2,11 @@ import asyncio
 
 import wandb
 from bittensor.btlogging import logging as logger
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from commons.objects import ObjectManager
 
-load_dotenv()
+load_dotenv(find_dotenv(".env.miner"))
 
 miner = ObjectManager.get_miner()
 

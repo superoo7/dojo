@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 import wandb
 from bittensor.btlogging import logging as logger
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,7 +16,7 @@ from commons.objects import ObjectManager
 from database.client import connect_db, disconnect_db
 from neurons.validator import DojoTaskTracker
 
-load_dotenv()
+load_dotenv(find_dotenv(".env.validator"))
 
 validator = ObjectManager.get_validator()
 
