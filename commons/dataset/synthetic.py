@@ -3,13 +3,13 @@ import os
 
 import aiohttp
 from bittensor.btlogging import logging as logger
-from dotenv import load_dotenv
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt
 
 from commons.utils import log_retry_info
 from template.protocol import SyntheticQA
+from template.utils.config import source_dotenv
 
-load_dotenv()
+source_dotenv()
 
 
 SYNTHETIC_API_BASE_URL = os.getenv("SYNTHETIC_API_URL")

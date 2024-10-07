@@ -258,6 +258,10 @@ class Validator(BaseNeuron):
         # ensure we consider only active miners
         logger.info(f"Sending request to miners {self._active_miner_uids}")
 
+        if len(self._active_miner_uids) == 0:
+            logger.warning("No active miners to send request to... skipping")
+            return
+
         request_id = get_new_uuid()
         async with self._lock:
             if external_user:

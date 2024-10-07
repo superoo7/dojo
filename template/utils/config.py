@@ -7,6 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import bittensor as bt
+from bittensor.btlogging import logging as logger
+from dotenv import find_dotenv, load_dotenv
 
 base_path = Path.cwd()
 
@@ -210,3 +212,16 @@ def get_config():
     configure_logging(_config)  # Configure logging using bt.logging
 
     return _config
+
+
+def source_dotenv():
+    config = get_config()
+    if not config.neuron or not config.neuron.type:
+        raise ValueError("Neuron type not set in config")
+
+    if config.neuron.type == "validator":
+        load_dotenv(find_dotenv(".env.validator"))
+    elif config.neuron.type == "miner":
+        load_dotenv(find_dotenv(".env.miner"))
+    else:
+        logger.warning(f"Unknown neuron type: {config.neuron.type}")
