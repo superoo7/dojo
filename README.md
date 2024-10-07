@@ -190,23 +190,17 @@ docker --version
 docker compose version
 ```
 
-4. Build the dojo base image
-
-```bash
-docker build -t dojo-base:latest -f ./docker/Dockerfile .
-```
-
-5. Create your wallets if they aren't created yet
+4. Create your wallets if they aren't created yet
 
 ```bash
 # run btcli
-docker compose run --rm btcli
+docker compose -f docker-compose.cli.yaml run --rm btcli
 # create your wallets
 btcli wallet new_coldkey
 btcli wallet new_hotkey
 ```
 
-6. Get some TAO and ensure you have enough TAO to cover the registration cost
+5. Get some TAO and ensure you have enough TAO to cover the registration cost
 
 ```bash
 # for Testnet
@@ -242,18 +236,17 @@ cp .env.miner.example .env
 
 # ENV's that needs to be filled for miners:
 # for testnet
-SUBTENSOR_NETWORK=test
-SUBTENSOR_ENDPOINT=wss://test.finney.opentensor.ai
 DOJO_API_BASE_URL="https://dojo-api-testnet.tensorplex.ai"
 WALLET_COLDKEY=# the name of the coldkey
 WALLET_HOTKEY=# the name of the hotkey
 AXON_PORT=8888 # port to serve requests over the public network for validators to call
+DOJO_API_KEY= # blank for now
 ```
 
 2. Run the CLI to retrieve API Key and Subscription Key, see [Dojo CLI](#dojo-cli) for usage.
 
 ```bash
-docker compose run --rm dojo-cli
+docker compose -f docker-compose.cli.yaml run --rm dojo-cli
 ```
 
 3. Complete the .env file with the variables below:
@@ -268,7 +261,7 @@ DOJO_API_KEY=# api key from earlier
 
 ```bash
 # For Testnet
-docker compose up -d miner-testnet-centralised
+docker compose -f docker-compose.miner.yaml up -d miner-testnet-centralised
 ```
 
 ### Option 2: Decentralised Method
@@ -281,12 +274,11 @@ cp .env.miner.example .env
 
 # ENV's that needs to be filled for miners:
 # for testnet
-SUBTENSOR_NETWORK=test
-SUBTENSOR_ENDPOINT=wss://test.finney.opentensor.ai
 DOJO_API_BASE_URL="http://worker-api:8080" # use this value
 WALLET_COLDKEY=# the name of the coldkey
 WALLET_HOTKEY=# the name of the hotkey
 AXON_PORT=8888 # port to serve requests over the public network for validators to call
+DOJO_API_KEY=# blank for now
 
 # for dojo-worker-api
 REDIS_USERNAME=
@@ -311,13 +303,13 @@ ETHEREUM_NODE=# get an ethereum endpoint URL from Infura
 2. Start the worker api which will be connected to the CLI later.
 
 ```bash
-docker compose up -d worker-api
+docker compose -f docker-compose.miner.yaml up -d worker-api
 ```
 
 3. Run the CLI to retrieve API Key and Subscription Key, see [Dojo CLI](#dojo-cli) for usage.
 
 ```bash
-docker compose run --rm dojo-cli
+docker compose -if docker-compose.cli.yaml run --rm dojo-cli
 ```
 
 4. Grab the API key and add it to your .env file
@@ -329,10 +321,10 @@ DOJO_API_KEY=# api key from earlier
 5. Now, run the full miner service.
 
 ```bash
-docker compose up -d miner-testnet-decentralised
+docker compose -f docker-compose.miner.yaml up -d miner-testnet-decentralised
 
 # monitor the services
-docker compose ps --all
+docker compose -f docker-compose.miner.yaml ps --all
 # you should see something like this
 # NAME                                 IMAGE                                             COMMAND                  SERVICE                       CREATED         STATUS                          PORTS
 # dojo-miner-testnet-decentralised-1   dojo-base:latest                                  "entrypoints.sh miner"   miner-testnet-decentralised   2 minutes ago   Up About a minute
@@ -345,7 +337,7 @@ docker compose ps --all
 # node-subtensor-testnet               ghcr.io/opentensor/subtensor:pr-720               "/bin/bash -c 'node-…"   node-subtensor-testnet        2 hours ago     Up 2 hours (healthy)            0.0.0.0:9933->9933/tcp, 0.0.0.0:9944->9944/tcp, 0.0.0.0:30333->30333/tcp
 
 # read miner logs using the following:
-docker compose logs -f miner-testnet-decentralised
+docker compose -f docker-compose.miner.yaml logs -f miner-testnet-decentralised
 ```
 
 > [!IMPORTANT]
@@ -413,7 +405,7 @@ Start the validator
 ```bash
 # start the validator
 # Testnet
-docker compose up -d validator-testnet
+docker compose -f docker-compose.validator.yaml up -d validator-testnet
 ```
 
 To start with autoupdate for validators (**optional**)
@@ -439,7 +431,7 @@ Features:
 You may use the dockerized version of the CLI using
 
 ```bash
-docker compose run --rm dojo-cli
+docker compose -f docker-compose.cli.yaml run --rm dojo-cli
 ```
 
 Alternatively you can simply run the CLI inside of a virtual environment
