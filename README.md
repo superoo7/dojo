@@ -194,7 +194,7 @@ docker compose version
 
 ```bash
 # run btcli
-docker compose -f docker-compose.cli.yaml run --rm btcli
+docker compose -f docker-compose.miner.yaml run --rm btcli
 # create your wallets
 btcli wallet new_coldkey
 btcli wallet new_hotkey
@@ -246,7 +246,7 @@ DOJO_API_KEY= # blank for now
 2. Run the CLI to retrieve API Key and Subscription Key, see [Dojo CLI](#dojo-cli) for usage.
 
 ```bash
-docker compose -f docker-compose.cli.yaml run --rm dojo-cli
+docker compose -f docker-compose.miner.yaml run --rm dojo-cli
 ```
 
 3. Complete the .env file with the variables below:
@@ -309,7 +309,7 @@ docker compose -f docker-compose.miner.yaml up -d worker-api
 3. Run the CLI to retrieve API Key and Subscription Key, see [Dojo CLI](#dojo-cli) for usage.
 
 ```bash
-docker compose -if docker-compose.cli.yaml run --rm dojo-cli
+docker compose -if docker-compose.miner.yaml run --rm dojo-cli
 ```
 
 4. Grab the API key and add it to your .env file
@@ -431,7 +431,7 @@ Features:
 You may use the dockerized version of the CLI using
 
 ```bash
-docker compose -f docker-compose.cli.yaml run --rm dojo-cli
+docker compose -f docker-compose.validator.yaml run --rm dojo-cli
 ```
 
 Alternatively you can simply run the CLI inside of a virtual environment
