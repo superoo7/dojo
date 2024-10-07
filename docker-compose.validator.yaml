@@ -61,19 +61,29 @@ services:
     image: postgres:15.7
     env_file:
       - .env.validator
-    environment:
-      POSTGRES_USER: ${DB_USERNAME_VALIDATOR}
-      POSTGRES_PASSWORD: ${DB_PASSWORD_VALIDATOR}
+    # looks strange, but double $ (i.e. $$) for variable substitution
+    command: >
+      bash -c "
+        export POSTGRES_USER=$${DB_USERNAME_VALIDATOR}
+        export POSTGRES_PASSWORD=$${DB_PASSWORD_VALIDATOR}
+        export POSTGRES_DB=$${DB_NAME_VALIDATOR}
+        docker-entrypoint.sh postgres
+      "
     expose:
       - 5432
     ports:
-      - "5532:5432"
+      - "5432:5432"
     volumes:
       - postgres-validator-volume:/var/lib/postgresql/data
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME_VALIDATOR}"]
+      test:
+        # looks strange, but double $ (i.e. $$) for variable substitution
+        [
+          "CMD-SHELL",
+          "pg_isready -h postgres-vali -U $${DB_USERNAME_VALIDATOR}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -85,12 +95,6 @@ services:
       dockerfile: ./docker/Dockerfile.validator.prisma
     env_file:
       - .env.validator
-    environment:
-      DB_USERNAME_VALIDATOR: ${DB_USERNAME_VALIDATOR}
-      DB_PASSWORD_VALIDATOR: ${DB_PASSWORD_VALIDATOR}
-      DB_NAME_VALIDATOR: ${DB_NAME_VALIDATOR}
-      DB_HOST_VALIDATOR: ${DB_HOST_VALIDATOR}
-      DATABASE_URL_VALIDATOR: postgresql://${DB_USERNAME_VALIDATOR}:${DB_PASSWORD_VALIDATOR}@${DB_HOST_VALIDATOR}/${DB_NAME_VALIDATOR}
     working_dir: /app
     volumes:
       - prisma-pip-cache:/root/.cache/pip
