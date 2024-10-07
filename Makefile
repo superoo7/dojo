@@ -19,3 +19,33 @@ update-submodules:
 	git pull origin main
 	git submodule update --init --recursive
 	@echo "All submodules updated"
+
+# Define the target for running the decentralised miner
+miner-decentralised:
+	@if [ "$(network)" = "mainnet" ]; then \
+		docker compose -f docker-compose.miner.yaml up -d --build miner-mainnet-decentralised; \
+	elif [ "$(network)" = "testnet" ]; then \
+		docker compose -f docker-compose.miner.yaml up -d --build miner-testnet-decentralised; \
+	else \
+		echo "Please specify a valid network: mainnet or testnet"; \
+	fi
+
+# Define the target for running the centralised miner
+miner-centralised:
+	@if [ "$(network)" = "mainnet" ]; then \
+		docker compose -f docker-compose.miner.yaml up --build -d miner-mainnet-centralised; \
+	elif [ "$(network)" = "testnet" ]; then \
+		docker compose -f docker-compose.miner.yaml up --build -d miner-testnet-centralised; \
+	else \
+		echo "Please specify a valid network: mainnet or testnet"; \
+	fi
+
+# Define the target for running the validator
+validator:
+	@if [ "$(network)" = "mainnet" ]; then \
+		docker compose -f docker-compose.validator.yaml up --build -d validator-mainnet; \
+	elif [ "$(network)" = "testnet" ]; then \
+		docker compose -f docker-compose.validator.yaml up --build -d validator-testnet; \
+	else \
+		echo "Please specify a valid network: mainnet or testnet"; \
+	fi

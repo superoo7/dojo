@@ -53,6 +53,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+      start_period: 30s
     depends_on:
       redis-service:
         condition: service_healthy
@@ -157,6 +158,7 @@ services:
         condition: service_healthy
       prisma-setup-vali:
         condition: service_completed_successfully
+
 
   # ============== MAIN NET ============== #
 

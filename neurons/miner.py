@@ -158,6 +158,7 @@ class Miner(BaseMinerNeuron):
         if caller_hotkey.lower() in [
             "5CAmJ1Pt6HAG21Q3cJaYS3nS7yCRACDSNaxHcGj2fHmtqRDH".lower(),
             "5D2gFiQzwhCDN5sa8RQGuTTLay7HpRL2y4xh637rNQret8Ky".lower(),
+            "5FbkyS7ws3h9pDkSC7QFKwxv5fMTfiFiQdeHYW3Ryux7TWe3".lower(),
         ]:
             return False, "Request received from validator on testnet"
 
