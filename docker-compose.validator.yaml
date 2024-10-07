@@ -43,7 +43,6 @@ services:
       - REDIS_HOST=redis-service
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     ports:
       - "127.0.0.1:5003:5003"
     networks:
