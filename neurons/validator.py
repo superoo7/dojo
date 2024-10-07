@@ -216,6 +216,8 @@ class Validator(BaseNeuron):
         """Perform a health check periodically to ensure miners are reachable"""
         while True:
             await asyncio.sleep(template.VALIDATOR_HEARTBEAT)
+            logger.info("🔄 Resyncing metagraph")
+            self.resync_metagraph()
             try:
                 all_miner_uids = extract_miner_uids(metagraph=self.metagraph)
                 logger.debug(f"Sending heartbeats to {len(all_miner_uids)} miners")
