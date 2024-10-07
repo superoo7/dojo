@@ -21,7 +21,6 @@ if [ "$1" = 'miner' ]; then
     echo "SUBTENSOR_ENDPOINT: ${SUBTENSOR_ENDPOINT}"
     echo "NETUID: ${NETUID}"
 
-    # TODO change netuid before going live
     python main_miner.py \
     --netuid ${NETUID} \
     --subtensor.network ${SUBTENSOR_NETWORK} \
@@ -42,8 +41,8 @@ if [ "$1" = 'validator' ]; then
     echo "SUBTENSOR_NETWORK: ${SUBTENSOR_NETWORK}"
     echo "SUBTENSOR_ENDPOINT: ${SUBTENSOR_ENDPOINT}"
     echo "NETUID: ${NETUID}"
+    echo "WANDB_PROJECT_NAME: ${WANDB_PROJECT_NAME}"
 
-    # TODO change netuid before going live
     python main_validator.py \
     --netuid ${NETUID} \
     --subtensor.network ${SUBTENSOR_NETWORK} \
@@ -52,5 +51,5 @@ if [ "$1" = 'validator' ]; then
     --wallet.name ${WALLET_COLDKEY} \
     --wallet.hotkey ${WALLET_HOTKEY} \
     --neuron.type validator \
-    --wandb.project_name dojo-mainnet
+    --wandb.project_name ${WANDB_PROJECT_NAME}
 fi

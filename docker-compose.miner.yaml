@@ -230,7 +230,7 @@ services:
       - dojo-pip-cache:/root/.cache/pip
     command: ["miner"]
     environment:
-      - NETUID=51
+      - NETUID=52
       - SUBTENSOR_NETWORK=finney
       - SUBTENSOR_ENDPOINT=***REMOVED***
     depends_on:
@@ -255,7 +255,7 @@ services:
       - dojo-pip-cache:/root/.cache/pip
     command: ["miner"]
     environment:
-      - NETUID=51
+      - NETUID=52
       - SUBTENSOR_NETWORK=finney
       - SUBTENSOR_ENDPOINT=***REMOVED***
     networks:
