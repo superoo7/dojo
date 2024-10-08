@@ -210,6 +210,8 @@ services:
       - $HOME/.bittensor:/root/.bittensor
       - dojo-pip-cache:/root/.cache/pip
     command: ["miner"]
+    ports:
+      - ${AXON_PORT}:${AXON_PORT}
     environment:
       - NETUID=98
       - SUBTENSOR_NETWORK=test
