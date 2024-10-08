@@ -3,9 +3,6 @@ import os
 from openai import AsyncOpenAI, OpenAI
 from strenum import StrEnum
 
-from template.utils.config import source_dotenv
-
-source_dotenv()
 # import instructor
 
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")

@@ -7,10 +7,6 @@ from commons.cache import RedisCache
 from commons.objects import ObjectManager
 from commons.utils import get_new_uuid
 from template.protocol import FeedbackRequest
-from template.utils.config import source_dotenv
-
-source_dotenv()
-
 
 reward_router = APIRouter(prefix="/api/reward_model")
 

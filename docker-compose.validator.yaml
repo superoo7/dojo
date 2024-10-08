@@ -1,10 +1,7 @@
 volumes:
-  postgres-volume:
-  redis-volume:
-  testnet-lite-volume:
-  dojo-pip-cache:
-  prisma-pip-cache:
   postgres-validator-volume:
+  redis-validator-volume:
+  prisma-pip-cache:
   prisma-binary:
 
 networks:
@@ -26,7 +23,7 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
-      - redis-volume:/data
+      - redis-validator-volume:/data
     networks:
       - internal
     healthcheck:
@@ -40,6 +37,9 @@ services:
     env_file:
       - .env.validator
     environment:
+      # leave env vars that'll never change down here, don't source any env vars
+      # here because we're not looking in .env and variable substitution will
+      # happen too early
       - REDIS_HOST=redis-service
       - REDIS_PORT=6379
       - REDIS_DB=0
@@ -48,7 +48,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      test: ["CMD", "curl", "-f", "http://synthetic-api:5003/health"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -56,6 +56,9 @@ services:
     depends_on:
       redis-service:
         condition: service_healthy
+    # allow docker commands inside container
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   postgres-vali:
     image: postgres:15.7
@@ -64,9 +67,9 @@ services:
     # looks strange, but double $ (i.e. $$) for variable substitution
     command: >
       bash -c "
-        export POSTGRES_USER=$${DB_USERNAME_VALIDATOR}
-        export POSTGRES_PASSWORD=$${DB_PASSWORD_VALIDATOR}
-        export POSTGRES_DB=$${DB_NAME_VALIDATOR}
+        export POSTGRES_USER=$${DB_USERNAME}
+        export POSTGRES_PASSWORD=$${DB_PASSWORD}
+        export POSTGRES_DB=$${DB_NAME}
         docker-entrypoint.sh postgres
       "
     expose:
@@ -80,10 +83,7 @@ services:
     healthcheck:
       test:
         # looks strange, but double $ (i.e. $$) for variable substitution
-        [
-          "CMD-SHELL",
-          "pg_isready -h postgres-vali -U $${DB_USERNAME_VALIDATOR}",
-        ]
+        ["CMD-SHELL", "pg_isready -h postgres-vali -U $${DB_USERNAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -105,29 +105,6 @@ services:
     depends_on:
       - postgres-vali
 
-  btcli:
-    # TODO @dev change back after testing
-    image: ghcr.io/tensorplex-labs/dojo:dev
-    volumes:
-      - ./:/app
-      - $HOME/.bittensor:/root/.bittensor
-      - dojo-pip-cache:/root/.cache/pip
-    command: ["btcli"]
-    tty: true
-    stdin_open: true
-
-  dojo-cli:
-    image: ghcr.io/tensorplex-labs/dojo:dev
-    volumes:
-      - ./:/app
-      - $HOME/.bittensor:/root/.bittensor
-      - dojo-pip-cache:/root/.cache/pip
-    command: ["dojo-cli"]
-    tty: true
-    stdin_open: true
-    networks:
-      - internal
-
   # ============== TEST NET ============== #
 
   validator-testnet:
@@ -136,6 +113,7 @@ services:
     env_file:
       - .env.validator
     environment:
+      - SYNTHETIC_API_URL=http://synthetic-api:5003
       - WANDB_PROJECT_NAME=dojo-testnet
       - NETUID=98
       - SUBTENSOR_NETWORK=test
@@ -143,8 +121,8 @@ services:
       - PRISMA_QUERY_ENGINE_BINARY=/root/prisma-python/node_modules/prisma/query-engine-debian-openssl-3.0.x
     volumes:
       - ./:/app
+      - ./.env.validator:/app/.env
       - $HOME/.bittensor:/root/.bittensor
-      - dojo-pip-cache:/root/.cache/pip
       - prisma-binary:/root/prisma-python
     command: ["validator"]
     networks:
@@ -158,7 +136,6 @@ services:
       prisma-setup-vali:
         condition: service_completed_successfully
 
-
   # ============== MAIN NET ============== #
 
   validator-mainnet:
@@ -167,6 +144,7 @@ services:
     env_file:
       - .env.validator
     environment:
+      - SYNTHETIC_API_URL=http://synthetic-api:5003
       - WANDB_PROJECT_NAME=dojo-mainnet
       - NETUID=52
       - SUBTENSOR_NETWORK=finney
@@ -174,8 +152,8 @@ services:
       - PRISMA_QUERY_ENGINE_BINARY=/root/prisma-python/node_modules/prisma/query-engine-debian-openssl-3.0.x
     volumes:
       - ./:/app
+      - ./.env.validator:/app/.env
       - $HOME/.bittensor:/root/.bittensor
-      - dojo-pip-cache:/root/.cache/pip
       - prisma-binary:/root/prisma-python
     command: ["validator"]
     networks:

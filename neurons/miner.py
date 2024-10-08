@@ -11,7 +11,7 @@ from bittensor.btlogging import logging as logger
 
 from commons.human_feedback.dojo import DojoAPI
 from commons.utils import get_epoch_time
-from template import VALIDATOR_MIN_STAKE
+from template import MINER_STATUS, VALIDATOR_MIN_STAKE
 from template.base.miner import BaseMinerNeuron
 from template.protocol import (
     FeedbackRequest,
@@ -53,13 +53,13 @@ class Miner(BaseMinerNeuron):
         caller_hotkey = (
             synapse.dendrite.hotkey if synapse.dendrite else "unknown hotkey"
         )
-        logger.debug(f"Received heartbeat synapse from {caller_hotkey}")
+        logger.debug(f"⬇️ Received heartbeat synapse from {caller_hotkey}")
         if not synapse:
             logger.error("Invalid synapse object")
             return synapse
 
         synapse.ack = True
-        logger.debug(f"Respondng to heartbeat synapse: {synapse}")
+        logger.debug(f"⬆️ Respondng to heartbeat synapse: {synapse}")
         return synapse
 
     async def forward_result(self, synapse: ScoringResult) -> ScoringResult:
@@ -206,4 +206,4 @@ class Miner(BaseMinerNeuron):
     async def log_miner_status(cls):
         while not cls._should_exit:
             logger.info(f"Miner running... {time.time()}")
-            await asyncio.sleep(20)
+            await asyncio.sleep(MINER_STATUS)
