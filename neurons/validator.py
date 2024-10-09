@@ -111,7 +111,7 @@ class Validator(BaseNeuron):
                         request=d.request,
                         miner_responses=d.miner_responses,
                     )
-                    logger.debug(f"Got hotkey to score: {hotkey_to_score}")
+                    logger.trace(f"Got hotkey to score: {hotkey_to_score}")
 
                     if not hotkey_to_score:
                         request_id = d.request.request_id
@@ -125,7 +125,7 @@ class Validator(BaseNeuron):
                         await DataManager.remove_responses([d])
                         continue
 
-                    logger.debug(
+                    logger.trace(
                         f"Initially had {len(d.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
                     )
 
@@ -344,8 +344,6 @@ class Validator(BaseNeuron):
             axons=axons, synapse=synapse, deserialize=False, timeout=24
         )
 
-        # map obfuscated model names back to the original model names
-        logger.debug(f"🥸 Obfuscated model map: {obfuscated_model_to_model}")
         valid_miner_responses: List[FeedbackRequest] = []
         try:
             for miner_response in miner_responses:
@@ -606,7 +604,6 @@ class Validator(BaseNeuron):
             logger.error("Failed to load validator state data")
             return
 
-        logger.success("Loaded validator state successfully")
         self.scores = state_data[ValidatorStateKeys.SCORES]
         DojoTaskTracker._rid_to_mhotkey_to_task_id = state_data[
             ValidatorStateKeys.DOJO_TASKS_TO_TRACK
@@ -615,10 +612,6 @@ class Validator(BaseNeuron):
         DojoTaskTracker._task_to_expiry = state_data[ValidatorStateKeys.TASK_TO_EXPIRY]
 
         logger.info(f"Scores state: {self.scores}")
-        logger.info(
-            f"Dojo Tasks to track: {DojoTaskTracker._rid_to_mhotkey_to_task_id}"
-        )
-        logger.info(f"Task to expiry {DojoTaskTracker._task_to_expiry}")
 
     @classmethod
     async def log_validator_status(cls):

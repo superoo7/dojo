@@ -251,6 +251,8 @@ services:
       - ./.env.miner:/app/.env
       - $HOME/.bittensor:/root/.bittensor
     command: ["miner"]
+    ports:
+      - ${AXON_PORT}:${AXON_PORT}
     environment:
       - NETUID=52
       - SUBTENSOR_NETWORK=finney

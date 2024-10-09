@@ -71,10 +71,6 @@ class DataManager:
                 map_model_to_dendrite_query_response(r) for r in feedback_requests
             ]
 
-            logger.info(
-                f"Loaded Mapped FeedbackRequest {len(result)}, and type: {type(result)}"
-            )
-
             return result
 
         except Exception as e:
