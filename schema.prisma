@@ -60,16 +60,16 @@ model Feedback_Request_Model {
 }
 
 model Completion_Response_Model {
-    id                        String                  @id @default(uuid())
-    completion_id             String                  @unique
+    id                        String                 @id @default(uuid())
+    completion_id             String
     model                     String
     completion                Json
     rank_id                   Int?
     score                     Float?
-    created_at                DateTime                @default(now())
-    updated_at                DateTime                @updatedAt
-    feedback_request_relation Feedback_Request_Model? @relation(fields: [feedback_request_id], references: [id])
-    feedback_request_id       String?
+    created_at                DateTime               @default(now())
+    updated_at                DateTime               @updatedAt
+    feedback_request_relation Feedback_Request_Model @relation(fields: [feedback_request_id], references: [id])
+    feedback_request_id       String
 }
 
 model Criteria_Type_Model {
