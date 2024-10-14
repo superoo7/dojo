@@ -43,6 +43,9 @@ class ValidatorStateKeys(StrEnum):
     TASK_TO_EXPIRY = "task_to_expiry"
 
 
+""" This is essentially an ORM..."""
+
+
 class DataManager:
     _instance = None
 
@@ -54,6 +57,8 @@ class DataManager:
     @classmethod
     async def load(cls) -> List[DendriteQueryResponse] | None:
         try:
+            # TODO @oom prevent loading whole thing in memory, this is ONLY being used in 1 place to
+            # filter by expire_at, which can just be a field
             feedback_requests = await Feedback_Request_Model.prisma().find_many(
                 include={
                     "criteria_types": True,
@@ -294,6 +299,7 @@ class DataManager:
     async def validator_load(cls) -> dict | None:
         try:
             # Query the latest validator state
+            # TODO @oom to prevent loading the whole table into memory
             states: List[
                 Validator_State_Model
             ] = await Validator_State_Model.prisma().find_many()
@@ -302,6 +308,7 @@ class DataManager:
                 return None
 
             # Query the scores
+            # TODO @oom score table only has 1 record so is fine
             score_record = await Score_Model.prisma().find_first(
                 order={"created_at": "desc"}
             )
@@ -314,10 +321,12 @@ class DataManager:
             scores: torch.Tensor = torch.tensor(json.loads(score_record.score))
 
             # Initialize the dictionaries with the correct types and default factories
+            # TODO @oom bro this should just be any task that's non-expired...
             dojo_tasks_to_track: RidToHotKeyToTaskId = defaultdict(
                 lambda: defaultdict(str)
             )
             model_map: RidToModelMap = defaultdict(dict)
+            # TODO @oom task expiry dict can actually just be a field inside of our Validator's request
             task_to_expiry: TaskExpiryDict = defaultdict(str)
 
             for state in states:

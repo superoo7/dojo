@@ -29,6 +29,7 @@ from dojo.protocol import (
 class DojoTaskTracker:
     _instance = None
     # request id -> miner hotkey -> task id
+    # TODO @oom remove class attrs, load everything from db with pagination
     _rid_to_mhotkey_to_task_id: RidToHotKeyToTaskId = defaultdict(
         lambda: defaultdict(str)
     )
