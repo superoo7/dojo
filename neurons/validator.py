@@ -88,6 +88,7 @@ class Validator(BaseNeuron):
                 batch_id = 0
                 # number of tasks to process in a batch
                 batch_size = 10
+                processed_request_ids = []
                 async for (
                     task_batch,
                     has_more_batches,
@@ -104,22 +105,21 @@ class Validator(BaseNeuron):
                     logger.info(
                         f"Processing batch {batch_id}, batch size: {batch_size}"
                     )
-
-                    logger.info(
-                        f"Got {len(task_batch)} requests past deadline and ready to score"
-                    )
-                    for d in task_batch:
+                    for task in task_batch:
                         criteria_to_miner_score, hotkey_to_score = (
                             Scoring.calculate_score(
-                                criteria_types=d.request.criteria_types,
-                                request=d.request,
-                                miner_responses=d.miner_responses,
+                                criteria_types=task.request.criteria_types,
+                                request=task.request,
+                                miner_responses=task.miner_responses,
                             )
                         )
-                        logger.trace(f"Got hotkey to score: {hotkey_to_score}")
+                        logger.debug(f"Got hotkey to score: {hotkey_to_score}")
+                        logger.debug(
+                            f"Initially had {len(task.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
+                        )
 
                         if not hotkey_to_score:
-                            request_id = d.request.request_id
+                            request_id = task.request.request_id
                             try:
                                 # TODO @oom this class attr shouldn't exist anymore
                                 del DojoTaskTracker._rid_to_mhotkey_to_task_id[
@@ -127,17 +127,12 @@ class Validator(BaseNeuron):
                                 ]
                             except KeyError:
                                 pass
-                            await DataManager.remove_responses([d])
                             continue
-
-                        logger.trace(
-                            f"Initially had {len(d.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
-                        )
 
                         self.update_scores(hotkey_to_scores=hotkey_to_score)
                         await self.send_scores(
                             synapse=ScoringResult(
-                                request_id=d.request.request_id,
+                                request_id=task.request.request_id,
                                 hotkey_to_scores=hotkey_to_score,
                             ),
                             hotkeys=list(hotkey_to_score.keys()),
@@ -190,17 +185,17 @@ class Validator(BaseNeuron):
 
                             wandb_data = jsonable_encoder(
                                 {
-                                    "task": d.request.task_type,
-                                    "criteria": d.request.criteria_types,
-                                    "prompt": d.request.prompt,
+                                    "task": task.request.task_type,
+                                    "criteria": task.request.criteria_types,
+                                    "prompt": task.request.prompt,
                                     "completions": jsonable_encoder(
-                                        d.request.completion_responses
+                                        task.request.completion_responses
                                     ),
                                     "num_completions": len(
-                                        d.request.completion_responses
+                                        task.request.completion_responses
                                     ),
                                     "scores": score_data,
-                                    "num_responses": len(d.miner_responses),
+                                    "num_responses": len(task.miner_responses),
                                 }
                             )
 
@@ -210,7 +205,10 @@ class Validator(BaseNeuron):
 
                         # once we have scored a response, just remove it
                         # TODO @oom should set the is_processed flag
-                        await DataManager.remove_responses([d])
+                        processed_request_ids.append(task.request.request_id)
+
+                if processed_request_ids:
+                    await ORM.mark_tasks_processed_by_request_ids(processed_request_ids)
 
             except Exception:
                 traceback.print_exc()
@@ -637,10 +635,13 @@ class Validator(BaseNeuron):
             new_moving_average[:min_len] = self.scores[:min_len]
             self.scores = new_moving_average
 
-    def update_scores(self, hotkey_to_scores):
+    def update_scores(self, hotkey_to_scores: dict[str, float]):
         """Performs exponential moving average on the scores based on the rewards received from the miners,
         after setting the self.scores variable here, `set_weights` will be called to set the weights on chain.
         """
+        if not hotkey_to_scores:
+            logger.warning("hotkey_to_scores is empty, skipping score update")
+            return
 
         nan_value_indices = np.isnan(list(hotkey_to_scores.values()))
         if nan_value_indices.any():
@@ -654,7 +655,7 @@ class Validator(BaseNeuron):
         for index, (key, value) in enumerate(hotkey_to_scores.items()):
             # handle nan values
             if nan_value_indices[index]:
-                rewards[key] = 0.0
+                rewards[key] = 0.0  # type: ignore
             # search metagraph for hotkey and grab uid
             try:
                 uid = neuron_hotkeys.index(key)

@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List
 
+from bittensor.btlogging import logging as logger
+
 from commons.exceptions import NoNewUnexpiredTasksYet, UnexpiredTasksAlreadyProcessed
+from database.client import transaction
 from database.mappers import (
     map_feedback_request_model_to_feedback_request,
 )
+from database.prisma.errors import PrismaError
 from database.prisma.models import (
     Feedback_Request_Model,
 )
@@ -31,6 +35,10 @@ class ORM:
             batch_size (int, optional): Number of tasks to return in a batch. Defaults to 10.
 
             1 task == 1 validator request, N miner responses
+
+        Raises:
+            NoNewUnexpiredTasksYet: If no unexpired tasks are found for processing.
+            UnexpiredTasksAlreadyProcessed: If all unexpired tasks have already been processed.
 
         Yields:
             Iterator[AsyncGenerator[tuple[List[DendriteQueryResponse], bool], None]]:
@@ -107,6 +115,7 @@ class ORM:
                 include=include_query,
                 where={
                     "parent_id": {"in": validator_request_ids},
+                    "is_processed": {"equals": False},
                 },
                 order={"created_at": "desc"},
             )
@@ -141,3 +150,27 @@ class ORM:
             yield responses, has_more_batches
 
         yield [], False
+
+    @staticmethod
+    async def mark_tasks_processed_by_request_ids(request_ids: list[str]):
+        """Mark records associated with validator's request and miner's responses as processed.
+
+        Args:
+            request_ids (list[str]): List of request ids.
+        """
+        if not request_ids:
+            logger.error("No request ids provided to mark as processed")
+            return
+
+        try:
+            async with transaction() as tx:
+                num_updated = await tx.feedback_request_model.update_many(
+                    data={"is_processed": True}, where={"id": {"in": request_ids}}
+                )
+                logger.success(
+                    f"Marked {num_updated} records associated to {len(request_ids)} tasks as processed"
+                )
+        except PrismaError as exc:
+            logger.error(f"Prisma error occurred: {exc}")
+        except Exception as exc:
+            logger.error(f"Unexpected error occurred: {exc}")
