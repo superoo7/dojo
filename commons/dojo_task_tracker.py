@@ -351,10 +351,16 @@ class DojoTaskTracker:
                         # Check cache for real model IDs
                         if request_id not in real_model_id_cache:
                             # Fetch real model IDs and cache them
-                            obfuscated_to_real_model_id = await ORM.get_real_model_ids(request_id)
-                            real_model_id_cache[request_id] = obfuscated_to_real_model_id
+                            obfuscated_to_real_model_id = await ORM.get_real_model_ids(
+                                request_id
+                            )
+                            real_model_id_cache[request_id] = (
+                                obfuscated_to_real_model_id
+                            )
                         else:
-                            obfuscated_to_real_model_id = real_model_id_cache[request_id]
+                            obfuscated_to_real_model_id = real_model_id_cache[
+                                request_id
+                            ]
 
                         for miner_response in miner_responses:
                             if (
@@ -390,24 +396,33 @@ class DojoTaskTracker:
                                     value = result_data.value
                                     if type == CriteriaTypeEnum.RANKING_CRITERIA:
                                         for model_id, rank in value.items():
-                                            real_model_id =  obfuscated_to_real_model_id.get(model_id)                                            model_id_to_avg_rank[real_model_id] += rank
+                                            real_model_id = (
+                                                obfuscated_to_real_model_id.get(
+                                                    model_id
+                                                )
+                                            )
+                                            model_id_to_avg_rank[real_model_id] += rank
                                             model_id_to_avg_rank[real_model_id] += rank
                                         num_ranks_by_workers += 1
                                     elif type == CriteriaTypeEnum.MULTI_SCORE:
                                         for model_id, score in value.items():
-                                            real_model_id =  obfuscated_to_real_model_id.get(model_id) 
-                                            model_id_to_avg_score[real_model_id] += score
+                                            real_model_id = (
+                                                obfuscated_to_real_model_id.get(
+                                                    model_id
+                                                )
+                                            )
+                                            model_id_to_avg_score[real_model_id] += (
+                                                score
+                                            )
                                         num_scores_by_workers += 1
-                        
+
                             # Average the ranks and scores
                             for model_id in model_id_to_avg_rank:
                                 model_id_to_avg_rank[model_id] /= num_ranks_by_workers
                             for model_id in model_id_to_avg_score:
                                 model_id_to_avg_score[model_id] /= num_scores_by_workers
-                                
+
                             # TODO @oom update the response with the new ranks and scores
-
-
 
             except Exception as e:
                 traceback.print_exc()
