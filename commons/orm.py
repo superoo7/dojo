@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List
 
+from commons.exceptions import NoNewUnexpiredTasksYet, UnexpiredTasksAlreadyProcessed
 from database.mappers import (
     map_feedback_request_model_to_feedback_request,
 )
@@ -11,6 +12,7 @@ from database.prisma.types import (
     Feedback_Request_ModelInclude,
     Feedback_Request_ModelWhereInput,
 )
+from dojo import TASK_DEADLINE
 from dojo.protocol import (
     DendriteQueryResponse,
 )
@@ -18,7 +20,7 @@ from dojo.protocol import (
 
 class ORM:
     @staticmethod
-    async def get_non_expired_tasks_by_batch(
+    async def get_unexpired_tasks(
         validator_hotkeys: list[str],
         batch_size: int = 10,
     ) -> AsyncGenerator[tuple[List[DendriteQueryResponse], bool], None]:
@@ -45,7 +47,7 @@ class ORM:
                 "parent_request": True,
             }
         )
-        vali_where_query = Feedback_Request_ModelWhereInput(
+        vali_where_query_unprocessed = Feedback_Request_ModelWhereInput(
             {
                 "hotkey": {"in": validator_hotkeys, "mode": "insensitive"},
                 "child_requests": {"some": {}},
@@ -53,26 +55,52 @@ class ORM:
                 "expire_at": {
                     "gt": datetime.now(timezone.utc),
                 },
+                "is_processed": {"equals": False},
             }
         )
 
-        # count first
-        task_count = await Feedback_Request_Model.prisma().count(
-            where=vali_where_query,
+        vali_where_query_processed = Feedback_Request_ModelWhereInput(
+            {
+                "hotkey": {"in": validator_hotkeys, "mode": "insensitive"},
+                "child_requests": {"some": {}},
+                # only check for expire at since miner may lie
+                "expire_at": {
+                    "gt": datetime.now(timezone.utc),
+                },
+                "is_processed": {"equals": True},
+            }
         )
 
-        for i in range(0, task_count, batch_size):
+        # count first total including non
+        task_count_unprocessed = await Feedback_Request_Model.prisma().count(
+            where=vali_where_query_unprocessed,
+        )
+
+        task_count_processed = await Feedback_Request_Model.prisma().count(
+            where=vali_where_query_processed,
+        )
+
+        if not task_count_unprocessed:
+            if task_count_processed:
+                raise UnexpiredTasksAlreadyProcessed(
+                    f"No remaining unexpired tasks found for processing, but don't worry as you have processed {task_count_processed} tasks."
+                )
+            else:
+                raise NoNewUnexpiredTasksYet(
+                    f"No unexpired tasks found for processing, please wait for tasks to pass the task deadline of {TASK_DEADLINE} seconds."
+                )
+
+        for i in range(0, task_count_unprocessed, batch_size):
             # find all validator requests
             validator_requests = await Feedback_Request_Model.prisma().find_many(
                 include=include_query,
-                where=vali_where_query,
+                where=vali_where_query_unprocessed,
                 order={"created_at": "desc"},
                 skip=i,
                 take=batch_size,
             )
 
             # find all miner responses
-
             validator_request_ids = [r.id for r in validator_requests]
 
             miner_responses = await Feedback_Request_Model.prisma().find_many(

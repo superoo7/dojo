@@ -3,7 +3,6 @@ import copy
 import random
 import time
 import traceback
-from datetime import datetime, timezone
 from traceback import print_exception
 from typing import List
 
@@ -22,6 +21,7 @@ from commons.data_manager import DataManager, ValidatorStateKeys
 from commons.dataset.synthetic import SyntheticAPI
 from commons.dojo_task_tracker import DojoTaskTracker
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
+from commons.orm import ORM
 from commons.scoring import Scoring
 from commons.utils import get_epoch_time, get_new_uuid, init_wandb, set_expire_time
 from database.client import connect_db
@@ -36,7 +36,7 @@ from dojo.protocol import (
     TaskType,
 )
 from dojo.utils.config import get_config
-from dojo.utils.uids import MinerUidSelector, extract_miner_uids
+from dojo.utils.uids import MinerUidSelector, extract_miner_uids, is_miner
 
 
 class Validator(BaseNeuron):
@@ -76,127 +76,141 @@ class Validator(BaseNeuron):
         )
 
     async def update_score_and_send_feedback(self):
-        """While this function is triggered every X time period in AsyncIOScheduler,
-        only relevant data that has passed the deadline of 8 hours will be scored and sent feedback.
-        """
         while True:
             await asyncio.sleep(dojo.VALIDATOR_UPDATE_SCORE)
             try:
-                data: List[DendriteQueryResponse] | None = await DataManager.load()
-                if not data:
-                    logger.debug(
-                        "Skipping scoring as no feedback data found, this means either all have been processed or you are running the validator for the first time."
-                    )
-                    continue
-
-                current_time = datetime.now(timezone.utc)
-                # allow enough time for human feedback
-                non_expired_data: List[DendriteQueryResponse] = [
-                    d
-                    for d in data
-                    if d.request.expire_at
-                    and datetime.fromisoformat(d.request.expire_at) < current_time
+                validator_hotkeys = [
+                    hotkey
+                    for uid, hotkey in enumerate(self.metagraph.hotkeys)
+                    if is_miner(self.metagraph, uid)
                 ]
-                if not non_expired_data:
-                    logger.warning(
-                        "Skipping scoring as no feedback data is due for scoring."
+
+                batch_id = 0
+                # number of tasks to process in a batch
+                batch_size = 10
+                async for (
+                    task_batch,
+                    has_more_batches,
+                ) in ORM.get_unexpired_tasks(validator_hotkeys, batch_size=batch_size):
+                    if not has_more_batches:
+                        logger.success(
+                            f"All tasks processed, total batches: {batch_id}, batch size: {batch_size}"
+                        )
+                        break
+
+                    if not task_batch:
+                        break
+
+                    logger.info(
+                        f"Processing batch {batch_id}, batch size: {batch_size}"
                     )
 
-                logger.info(
-                    f"Got {len(non_expired_data)} requests past deadline and ready to score"
-                )
-                for d in non_expired_data:
-                    criteria_to_miner_score, hotkey_to_score = Scoring.calculate_score(
-                        criteria_types=d.request.criteria_types,
-                        request=d.request,
-                        miner_responses=d.miner_responses,
+                    logger.info(
+                        f"Got {len(task_batch)} requests past deadline and ready to score"
                     )
-                    logger.trace(f"Got hotkey to score: {hotkey_to_score}")
-
-                    if not hotkey_to_score:
-                        request_id = d.request.request_id
-                        try:
-                            del DojoTaskTracker._rid_to_mhotkey_to_task_id[request_id]
-                        except KeyError:
-                            pass
-                        await DataManager.remove_responses([d])
-                        continue
-
-                    logger.trace(
-                        f"Initially had {len(d.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
-                    )
-
-                    self.update_scores(hotkey_to_scores=hotkey_to_score)
-                    await self.send_scores(
-                        synapse=ScoringResult(
-                            request_id=d.request.request_id,
-                            hotkey_to_scores=hotkey_to_score,
-                        ),
-                        hotkeys=list(hotkey_to_score.keys()),
-                    )
-
-                    async def log_wandb():
-                        # calculate mean across all criteria
-
-                        if not criteria_to_miner_score.values() or not hotkey_to_score:
-                            logger.warning(
-                                "No criteria to miner scores available. Skipping calculating averages for wandb."
+                    for d in task_batch:
+                        criteria_to_miner_score, hotkey_to_score = (
+                            Scoring.calculate_score(
+                                criteria_types=d.request.criteria_types,
+                                request=d.request,
+                                miner_responses=d.miner_responses,
                             )
-                            return
+                        )
+                        logger.trace(f"Got hotkey to score: {hotkey_to_score}")
 
-                        mean_weighted_consensus_scores = (
-                            torch.stack(
-                                [
-                                    miner_scores.consensus.score
-                                    for miner_scores in criteria_to_miner_score.values()
+                        if not hotkey_to_score:
+                            request_id = d.request.request_id
+                            try:
+                                # TODO @oom this class attr shouldn't exist anymore
+                                del DojoTaskTracker._rid_to_mhotkey_to_task_id[
+                                    request_id
                                 ]
+                            except KeyError:
+                                pass
+                            await DataManager.remove_responses([d])
+                            continue
+
+                        logger.trace(
+                            f"Initially had {len(d.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
+                        )
+
+                        self.update_scores(hotkey_to_scores=hotkey_to_score)
+                        await self.send_scores(
+                            synapse=ScoringResult(
+                                request_id=d.request.request_id,
+                                hotkey_to_scores=hotkey_to_score,
+                            ),
+                            hotkeys=list(hotkey_to_score.keys()),
+                        )
+
+                        async def log_wandb():
+                            # calculate mean across all criteria
+
+                            if (
+                                not criteria_to_miner_score.values()
+                                or not hotkey_to_score
+                            ):
+                                logger.warning(
+                                    "No criteria to miner scores available. Skipping calculating averages for wandb."
+                                )
+                                return
+
+                            mean_weighted_consensus_scores = (
+                                torch.stack(
+                                    [
+                                        miner_scores.consensus.score
+                                        for miner_scores in criteria_to_miner_score.values()
+                                    ]
+                                )
+                                .mean(dim=0)
+                                .tolist()
                             )
-                            .mean(dim=0)
-                            .tolist()
-                        )
-                        mean_weighted_gt_scores = (
-                            torch.stack(
-                                [
-                                    miner_scores.ground_truth.score
-                                    for miner_scores in criteria_to_miner_score.values()
-                                ]
+                            mean_weighted_gt_scores = (
+                                torch.stack(
+                                    [
+                                        miner_scores.ground_truth.score
+                                        for miner_scores in criteria_to_miner_score.values()
+                                    ]
+                                )
+                                .mean(dim=0)
+                                .tolist()
                             )
-                            .mean(dim=0)
-                            .tolist()
-                        )
 
-                        logger.info(
-                            f"mean miner scores across differerent criteria: consensus shape:{mean_weighted_consensus_scores}, gt shape:{mean_weighted_gt_scores}"
-                        )
+                            logger.info(
+                                f"mean miner scores across differerent criteria: consensus shape:{mean_weighted_consensus_scores}, gt shape:{mean_weighted_gt_scores}"
+                            )
 
-                        score_data = {}
-                        # update the scores based on the rewards
-                        score_data["scores_by_hotkey"] = hotkey_to_score
-                        score_data["mean"] = {
-                            "consensus": mean_weighted_consensus_scores,
-                            "ground_truth": mean_weighted_gt_scores,
-                        }
-
-                        wandb_data = jsonable_encoder(
-                            {
-                                "task": d.request.task_type,
-                                "criteria": d.request.criteria_types,
-                                "prompt": d.request.prompt,
-                                "completions": jsonable_encoder(
-                                    d.request.completion_responses
-                                ),
-                                "num_completions": len(d.request.completion_responses),
-                                "scores": score_data,
-                                "num_responses": len(d.miner_responses),
+                            score_data = {}
+                            # update the scores based on the rewards
+                            score_data["scores_by_hotkey"] = hotkey_to_score
+                            score_data["mean"] = {
+                                "consensus": mean_weighted_consensus_scores,
+                                "ground_truth": mean_weighted_gt_scores,
                             }
-                        )
 
-                        wandb.log(wandb_data, commit=True)
+                            wandb_data = jsonable_encoder(
+                                {
+                                    "task": d.request.task_type,
+                                    "criteria": d.request.criteria_types,
+                                    "prompt": d.request.prompt,
+                                    "completions": jsonable_encoder(
+                                        d.request.completion_responses
+                                    ),
+                                    "num_completions": len(
+                                        d.request.completion_responses
+                                    ),
+                                    "scores": score_data,
+                                    "num_responses": len(d.miner_responses),
+                                }
+                            )
 
-                    asyncio.create_task(log_wandb())
+                            wandb.log(wandb_data, commit=True)
 
-                    # once we have scored a response, just remove it
-                    await DataManager.remove_responses([d])
+                        asyncio.create_task(log_wandb())
+
+                        # once we have scored a response, just remove it
+                        # TODO @oom should set the is_processed flag
+                        await DataManager.remove_responses([d])
 
             except Exception:
                 traceback.print_exc()

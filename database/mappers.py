@@ -271,7 +271,7 @@ def map_feedback_request_model_to_feedback_request(
                 expire_at=model.expire_at.replace(microsecond=0, tzinfo=timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z"),
-                axon=bt.TerminalInfo(hotkey=model.hotkey) if model.hotkey else None,
+                axon=bt.TerminalInfo(hotkey=model.hotkey),
             )
         else:
             feedback_request = FeedbackRequest(
@@ -284,7 +284,7 @@ def map_feedback_request_model_to_feedback_request(
                 expire_at=model.expire_at.replace(microsecond=0, tzinfo=timezone.utc)
                 .isoformat()
                 .replace("+00:00", "Z"),
-                dendrite=bt.TerminalInfo(hotkey=model.hotkey) if model.hotkey else None,
+                dendrite=bt.TerminalInfo(hotkey=model.hotkey),
                 ground_truth=ground_truth,
             )
 
