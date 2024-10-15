@@ -132,43 +132,6 @@ class DataManager:
             return None
 
     @classmethod
-    async def overwrite_miner_responses_by_request_id(
-        cls, request_id: str, miner_responses: List[FeedbackRequest]
-    ) -> bool:
-        try:
-            # TODO can improve this
-            async with transaction() as tx:
-                # Delete existing completion responses for the given request_id
-                await tx.completion_response_model.delete_many(
-                    where={"miner_response": {"is": {"request_id": request_id}}}
-                )
-
-                # Delete existing miner responses for the given request_id
-                await tx.miner_response_model.delete_many(
-                    where={"request_id": request_id}
-                )
-
-                # Create new miner responses
-                for miner_response in miner_responses:
-                    miner_response_model = await tx.miner_response_model.create(
-                        data=map_miner_response_to_model(miner_response, request_id)
-                    )
-
-                    # Create related completions for miner responses
-                    for completion in miner_response.completion_responses:
-                        await tx.completion_response_model.create(
-                            data=map_completion_response_to_model(
-                                completion, miner_response_model.id
-                            )
-                        )
-
-            logger.success(f"Overwritten miner responses for requestId: {request_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to overwrite miner responses: {e}")
-            return False
-
-    @classmethod
     async def validator_save(
         cls,
         scores: torch.Tensor,

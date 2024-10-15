@@ -9,7 +9,6 @@ import bittensor as bt
 from bittensor.btlogging import logging as logger
 
 import dojo
-from commons.data_manager import DataManager
 from commons.objects import ObjectManager
 from commons.orm import ORM
 from commons.utils import get_epoch_time
@@ -288,10 +287,8 @@ class DojoTaskTracker:
                             data.miner_responses.remove(found_response)
                             data.miner_responses.append(miner_response)
 
-                        status = (
-                            await DataManager.overwrite_miner_responses_by_request_id(
-                                request_id, data.miner_responses
-                            )
+                        status = await ORM.update_miner_completions_by_request_id(
+                            request_id, data.miner_responses
                         )
                         logger.trace(
                             f"Appending Dojo task results for request id: {request_id}, was successful? {status}"

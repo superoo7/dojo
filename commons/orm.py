@@ -4,12 +4,14 @@ from typing import AsyncGenerator, List
 from bittensor.btlogging import logging as logger
 
 from commons.exceptions import (
+    InvalidMinerResponse,
     InvalidTask,
     NoNewUnexpiredTasksYet,
     UnexpiredTasksAlreadyProcessed,
 )
 from database.client import transaction
 from database.mappers import (
+    map_completion_response_to_model,
     map_feedback_request_model_to_feedback_request,
 )
 from database.prisma.errors import PrismaError
@@ -23,6 +25,7 @@ from database.prisma.types import (
 from dojo import TASK_DEADLINE
 from dojo.protocol import (
     DendriteQueryResponse,
+    FeedbackRequest,
 )
 
 
@@ -202,7 +205,6 @@ class ORM:
             validator_requests = [r for r in all_requests if r.parent_id is None]
             assert len(validator_requests) == 1, "Expected only one validator request"
             validator_request = validator_requests[0]
-            task =
             if not validator_request.child_requests:
                 raise InvalidTask(
                     f"Validator request {validator_request.id} must have child requests"
@@ -223,9 +225,73 @@ class ORM:
             logger.error(f"Failed to get feedback request by request_id: {e}")
             return None
 
-
     @staticmethod
     async def get_num_processed_tasks() -> int:
         return await Feedback_Request_Model.prisma().count(
             where={"is_processed": True, "parent_id": None}
         )
+
+    @staticmethod
+    async def update_miner_completions_by_request_id(
+        request_id: str, miner_responses: List[FeedbackRequest]
+    ) -> bool:
+        """Update the miner's provided rank_id / scores etc. for a given request id that it is responding to validator. This exists because over the course of a task, a miner may recruit multiple workers and we
+        need to recalculate the average score / rank_id etc. across all workers.
+        """
+        try:
+            async with transaction() as tx:
+                # Delete existing completion responses for the given request_id
+                await tx.completion_response_model.delete_many(
+                    where={"feedback_request_id": request_id}
+                )
+
+                # delete the existing completion_responses
+                # find the feedback request ids
+                miner_hotkeys = []
+                for miner_response in miner_responses:
+                    if not miner_response.axon or not miner_response.axon.hotkey:
+                        raise InvalidMinerResponse(
+                            f"Miner response {miner_response.id} must have a hotkey"
+                        )
+                    miner_hotkeys.append(miner_response.axon.hotkey)
+
+                found_responses = await tx.feedback_request_model.find_many(
+                    where={"request_id": request_id, "hotkey": {"in": miner_hotkeys}}
+                )
+
+                # delete the completions for all of these miners
+                await tx.completion_response_model.delete_many(
+                    where={
+                        "feedback_request_id": {"in": [r.id for r in found_responses]}
+                    }
+                )
+
+                # reconstruct the completion_responses data
+                for miner_response in miner_responses:
+                    # find the particular request
+                    hotkey = miner_response.axon.hotkey  # type: ignore
+                    curr_miner_response = await tx.feedback_request_model.find_first(
+                        where=Feedback_Request_ModelWhereInput(
+                            request_id=request_id,
+                            hotkey=hotkey,  # type: ignore
+                        )
+                    )
+
+                    if not curr_miner_response:
+                        raise ValueError("Miner response not found")
+
+                    # recreate completions
+                    for completion in miner_response.completion_responses:
+                        await tx.completion_response_model.create(
+                            data=map_completion_response_to_model(
+                                completion, curr_miner_response.id
+                            )
+                        )
+
+            logger.success(
+                f"Successfully updated completion data for miners: {miner_hotkeys}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update completion data for miner responses: {e}")
+            return False
