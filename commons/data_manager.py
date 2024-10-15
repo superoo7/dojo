@@ -55,34 +55,6 @@ class DataManager:
         return cls._instance
 
     @classmethod
-    async def load(cls) -> List[DendriteQueryResponse] | None:
-        try:
-            # TODO @oom prevent loading whole thing in memory, this is ONLY being used in 1 place to
-            # filter by expire_at, which can just be a field
-            feedback_requests = await Feedback_Request_Model.prisma().find_many(
-                include={
-                    "criteria_types": True,
-                    "miner_responses": {"include": {"completions": True}},
-                }
-            )
-
-            if not feedback_requests or len(feedback_requests) == 0:
-                logger.error("No Feedback_Request_Model data found.")
-                return None
-
-            logger.info(f"Loaded {len(feedback_requests)} requests")
-
-            result = [
-                map_model_to_dendrite_query_response(r) for r in feedback_requests
-            ]
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Failed to load data from database: {e}")
-            return None
-
-    @classmethod
     async def save_dendrite_response(
         cls, response: DendriteQueryResponse
     ) -> Feedback_Request_Model | None:
