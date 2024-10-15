@@ -36,3 +36,11 @@ class InvalidCompletion(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+
+class InvalidTask(Exception):
+    """Exception raised when a task is invalid."""
+
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)

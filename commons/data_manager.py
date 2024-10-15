@@ -10,6 +10,7 @@ from strenum import StrEnum
 from commons.exceptions import (
     InvalidCompletion,
     InvalidMinerResponse,
+    InvalidTask,
 )
 from database.client import transaction
 from database.mappers import (
@@ -22,7 +23,6 @@ from database.prisma._fields import Json
 from database.prisma.models import Feedback_Request_Model, Score_Model
 from database.prisma.types import Score_ModelCreateInput, Score_ModelUpdateInput
 from dojo.protocol import (
-    DendriteQueryResponse,
     FeedbackRequest,
     RidToHotKeyToTaskId,
     RidToModelMap,
@@ -52,6 +52,15 @@ class DataManager:
     async def save_task(
         validator_request: FeedbackRequest, miner_responses: List[FeedbackRequest]
     ) -> Feedback_Request_Model | None:
+        """Saves a task, which consists of both the validator's request and the miners' responses.
+
+        Args:
+            validator_request (FeedbackRequest): The request made by the validator.
+            miner_responses (List[FeedbackRequest]): The responses made by the miners.
+
+        Returns:
+            Feedback_Request_Model | None: Only validator's feedback request model, or None if failed.
+        """
         try:
             feedback_request_model: Feedback_Request_Model | None = None
             async with transaction() as tx:
@@ -112,6 +121,11 @@ class DataManager:
                             f"Completion response from hotkey: {miner_hotkey} is invalid: {e}"
                         )
 
+                if len(created_miner_models) == 0:
+                    raise InvalidTask(
+                        "A task must consist of at least one miner response, along with validator's request"
+                    )
+
                 feedback_request_model.child_requests = created_miner_models
             return feedback_request_model
         except Exception as e:
@@ -154,23 +168,6 @@ class DataManager:
         except Exception as e:
             logger.error(f"Failed to overwrite miner responses: {e}")
             return False
-
-    @classmethod
-    async def get_by_request_id(cls, request_id: str) -> DendriteQueryResponse | None:
-        try:
-            feedback_request = await Feedback_Request_Model.prisma().find_first(
-                where={"request_id": request_id},
-                include={
-                    "criteria_types": True,
-                    "miner_responses": {"include": {"completions": True}},
-                },
-            )
-            if feedback_request:
-                return map_model_to_dendrite_query_response(feedback_request)
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get feedback request by request_id: {e}")
-            return None
 
     @classmethod
     async def validator_save(

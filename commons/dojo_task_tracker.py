@@ -11,6 +11,7 @@ from bittensor.btlogging import logging as logger
 import dojo
 from commons.data_manager import DataManager
 from commons.objects import ObjectManager
+from commons.orm import ORM
 from commons.utils import get_epoch_time
 from database.prisma.models import Feedback_Request_Model, Miner_Response_Model
 from dojo.protocol import (
@@ -185,7 +186,7 @@ class DojoTaskTracker:
 
                     data: (
                         DendriteQueryResponse | None
-                    ) = await DataManager.get_by_request_id(request_id)
+                    ) = await ORM.get_task_by_request_id(request_id)
 
                     if not data or not data.request:
                         logger.error(

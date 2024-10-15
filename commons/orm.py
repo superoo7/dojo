@@ -3,7 +3,11 @@ from typing import AsyncGenerator, List
 
 from bittensor.btlogging import logging as logger
 
-from commons.exceptions import NoNewUnexpiredTasksYet, UnexpiredTasksAlreadyProcessed
+from commons.exceptions import (
+    InvalidTask,
+    NoNewUnexpiredTasksYet,
+    UnexpiredTasksAlreadyProcessed,
+)
 from database.client import transaction
 from database.mappers import (
     map_feedback_request_model_to_feedback_request,
@@ -174,3 +178,47 @@ class ORM:
             logger.error(f"Prisma error occurred: {exc}")
         except Exception as exc:
             logger.error(f"Unexpected error occurred: {exc}")
+
+    @staticmethod
+    async def get_task_by_request_id(request_id: str) -> DendriteQueryResponse | None:
+        try:
+            # find the parent id first
+            include_query = Feedback_Request_ModelInclude(
+                {
+                    "completions": True,
+                    "criteria_types": True,
+                    "ground_truths": True,
+                    "parent_request": True,
+                    "child_requests": True,
+                }
+            )
+            all_requests = await Feedback_Request_Model.prisma().find_many(
+                where={
+                    "request_id": request_id,
+                },
+                include=include_query,
+            )
+
+            validator_requests = [r for r in all_requests if r.parent_id is None]
+            assert len(validator_requests) == 1, "Expected only one validator request"
+            validator_request = validator_requests[0]
+            task =
+            if not validator_request.child_requests:
+                raise InvalidTask(
+                    f"Validator request {validator_request.id} must have child requests"
+                )
+
+            miner_responses = [
+                map_feedback_request_model_to_feedback_request(r, is_miner=True)
+                for r in validator_request.child_requests
+            ]
+            return DendriteQueryResponse(
+                request=map_feedback_request_model_to_feedback_request(
+                    model=validator_request, is_miner=False
+                ),
+                miner_responses=miner_responses,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get feedback request by request_id: {e}")
+            return None
