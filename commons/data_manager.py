@@ -9,24 +9,14 @@ from strenum import StrEnum
 
 from database.client import transaction
 from database.mappers import (
+    map_child_feedback_request_to_model,
     map_completion_response_to_model,
     map_criteria_type_to_model,
-    map_feedback_request_to_model,
-    map_miner_response_to_model,
-    map_model_to_dendrite_query_response,
+    map_parent_feedback_request_to_model,
 )
 from database.prisma._fields import Json
-from database.prisma.models import (
-    Feedback_Request_Model,
-    Miner_Response_Model,
-    Score_Model,
-    Validator_State_Model,
-)
-from database.prisma.types import (
-    Score_ModelCreateInput,
-    Score_ModelUpdateInput,
-    Validator_State_ModelCreateInput,
-)
+from database.prisma.models import Feedback_Request_Model, Score_Model
+from database.prisma.types import Score_ModelCreateInput, Score_ModelUpdateInput
 from dojo.protocol import (
     DendriteQueryResponse,
     FeedbackRequest,
@@ -66,31 +56,31 @@ class DataManager:
                 )
                 logger.trace("Starting transaction for saving dendrite query response.")
 
-                # Create the main feedback request record
+                # Create the parent feedback request first
                 feedback_request_model = await tx.feedback_request_model.create(
-                    data=map_feedback_request_to_model(response.request)
+                    data=map_parent_feedback_request_to_model(response.request)
                 )
 
                 # Create related criteria types
-                for criteria in response.request.criteria_types:
-                    criteria_model = map_criteria_type_to_model(
-                        criteria, feedback_request_model.request_id
-                    )
-                    await tx.criteria_type_model.create(data=criteria_model)
+                criteria_models = [
+                    map_criteria_type_to_model(criteria, feedback_request_model.id)
+                    for criteria in response.request.criteria_types
+                ]
+                await tx.criteria_type_model.create_many(criteria_models)
 
-                miner_responses: list[Miner_Response_Model] = []
-                # Create related miner responses and their completion responses
+                # Create related miner responses (child) and their completion responses
+                miner_responses: list[Feedback_Request_Model] = []
                 for miner_response in response.miner_responses:
-                    miner_response_data = map_miner_response_to_model(
+                    miner_response_data = map_child_feedback_request_to_model(
                         miner_response,
-                        feedback_request_model.request_id,  # Use feedback_request_model.request_id
+                        feedback_request_model.id,
                     )
 
                     if not miner_response_data.get("dojo_task_id"):
                         logger.error("Dojo task id is required")
                         raise ValueError("Dojo task id is required")
 
-                    miner_response_model = await tx.miner_response_model.create(
+                    miner_response_model = await tx.feedback_request_model.create(
                         data=miner_response_data
                     )
 
@@ -104,7 +94,7 @@ class DataManager:
                         await tx.completion_response_model.create(data=completion_data)
                         logger.trace(f"Created completion response: {completion_data}")
 
-                feedback_request_model.miner_responses = miner_responses
+                feedback_request_model.child_requests = miner_responses
             return feedback_request_model
         except Exception as e:
             logger.error(f"Failed to save dendrite query response: {e}")
