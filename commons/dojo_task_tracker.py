@@ -12,7 +12,7 @@ import dojo
 from commons.objects import ObjectManager
 from commons.orm import ORM
 from commons.utils import get_epoch_time
-from database.prisma.models import Feedback_Request_Model, Miner_Response_Model
+from database.prisma.models import Feedback_Request_Model
 from dojo.protocol import (
     CriteriaTypeEnum,
     DendriteQueryResponse,
@@ -43,6 +43,7 @@ class DojoTaskTracker:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+    # TODO @oom remove this method
     @classmethod
     async def update_task_map(
         cls,
@@ -81,6 +82,7 @@ class DojoTaskTracker:
             cls._rid_to_model_map[request_id] = obfuscated_model_to_model
         return
 
+    # TODO @oom remove this method
     @classmethod
     async def remove_expired_tasks(cls):
         # Identify expired tasks
@@ -163,9 +165,14 @@ class DojoTaskTracker:
 
         while not cls._should_exit:
             try:
-                if len(cls._rid_to_mhotkey_to_task_id.keys()) == 0:
-                    await asyncio.sleep(SLEEP_SECONDS)
-                    continue
+                # Use get_unexpired_tasks to fetch unexpired tasks
+                async for task_batch, has_more_batches in ORM.get_unexpired_tasks(
+                    validator_hotkeys=list(cls._rid_to_mhotkey_to_task_id.keys()),
+                    batch_size=10,
+                ):
+                    if not task_batch:
+                        await asyncio.sleep(SLEEP_SECONDS)
+                        continue
 
                 logger.info(
                     f"Monitoring task completions {get_epoch_time()} for {len(cls._rid_to_mhotkey_to_task_id.keys())} requests"
@@ -312,3 +319,97 @@ class DojoTaskTracker:
                 logger.error(f"Error during Dojo task monitoring {str(e)}")
                 pass
             await asyncio.sleep(SLEEP_SECONDS)
+
+    @classmethod
+    async def monitor_task_completions_draft(cls):
+        SLEEP_SECONDS = 30
+        await asyncio.sleep(dojo.DOJO_TASK_MONITORING)
+
+        # Initialize cache for real model IDs
+        # TODO could utilize in redis
+        real_model_id_cache = {}
+
+        while not cls._should_exit:
+            try:
+                # Fetch unexpired tasks using get_unexpired_tasks
+                async for task_batch, has_more_batches in ORM.get_unexpired_tasks(
+                    validator_hotkeys=[],  # Assuming you have a way to get relevant hotkeys
+                    batch_size=10,
+                ):
+                    if not task_batch:
+                        await asyncio.sleep(SLEEP_SECONDS)
+                        continue
+
+                    logger.info(
+                        f"Monitoring task completions {get_epoch_time()} for {len(task_batch)} requests"
+                    )
+
+                    for data in task_batch:
+                        request_id = data.request.request_id
+                        miner_responses = data.miner_responses
+
+                        # Check cache for real model IDs
+                        if request_id not in real_model_id_cache:
+                            # Fetch real model IDs and cache them
+                            obfuscated_to_real_model_id = await ORM.get_real_model_ids(request_id)
+                            real_model_id_cache[request_id] = obfuscated_to_real_model_id
+                        else:
+                            obfuscated_to_real_model_id = real_model_id_cache[request_id]
+
+                        for miner_response in miner_responses:
+                            if (
+                                not miner_response.axon
+                                or not miner_response.axon.hotkey
+                                or not miner_response.dojo_task_id
+                            ):
+                                logger.warning(
+                                    "Miner hotkey, or task_id not found in response"
+                                )
+                                continue
+
+                            miner_hotkey = miner_response.axon.hotkey
+                            task_id = miner_response.dojo_task_id
+                            task_results = await cls.get_task_results_from_miner(
+                                miner_hotkey, task_id
+                            )
+
+                            if not task_results and not len(task_results) > 0:
+                                logger.warning(
+                                    f"Task ID: {task_id} by miner: {miner_hotkey} has not been completed yet or no task results."
+                                )
+                                continue
+
+                            # Process task result
+                            model_id_to_avg_rank = defaultdict(float)
+                            model_id_to_avg_score = defaultdict(float)
+                            num_ranks_by_workers, num_scores_by_workers = 0, 0
+
+                            for result in task_results:
+                                for result_data in result.result_data:
+                                    type = result_data.type
+                                    value = result_data.value
+                                    if type == CriteriaTypeEnum.RANKING_CRITERIA:
+                                        for model_id, rank in value.items():
+                                            real_model_id =  obfuscated_to_real_model_id.get(model_id)                                            model_id_to_avg_rank[real_model_id] += rank
+                                            model_id_to_avg_rank[real_model_id] += rank
+                                        num_ranks_by_workers += 1
+                                    elif type == CriteriaTypeEnum.MULTI_SCORE:
+                                        for model_id, score in value.items():
+                                            real_model_id =  obfuscated_to_real_model_id.get(model_id) 
+                                            model_id_to_avg_score[real_model_id] += score
+                                        num_scores_by_workers += 1
+                        
+                            # Average the ranks and scores
+                            for model_id in model_id_to_avg_rank:
+                                model_id_to_avg_rank[model_id] /= num_ranks_by_workers
+                            for model_id in model_id_to_avg_score:
+                                model_id_to_avg_score[model_id] /= num_scores_by_workers
+                                
+                            # TODO @oom update the response with the new ranks and scores
+
+
+
+            except Exception as e:
+                traceback.print_exc()
+                logger.error(f"Error during Dojo task monitoring {str(e)}")
+                pass

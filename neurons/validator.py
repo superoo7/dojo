@@ -84,7 +84,7 @@ class Validator(BaseNeuron):
                 validator_hotkeys = [
                     hotkey
                     for uid, hotkey in enumerate(self.metagraph.hotkeys)
-                    if is_miner(self.metagraph, uid)
+                    if not is_miner(self.metagraph, uid)
                 ]
 
                 batch_id = 0
