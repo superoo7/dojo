@@ -1,5 +1,4 @@
 import json
-from collections import defaultdict
 from typing import List
 
 import torch
@@ -236,63 +235,3 @@ class DataManager:
                 logger.warning("Scores are all zero. Skipping save.")
         except Exception as e:
             logger.error(f"Failed to save validator state: {e}")
-
-    @classmethod
-    async def validator_load(cls) -> dict | None:
-        try:
-            states: List[
-                Validator_State_Model
-            ] = await Validator_State_Model.prisma().find_many()
-
-            if not states:
-                return None
-
-            # Query the scores
-            # TODO @oom score table only has 1 record so is fine
-            score_record = await Score_Model.prisma().find_first(
-                order={"created_at": "desc"}
-            )
-
-            if not score_record:
-                logger.trace("Score record not found.")
-                return None
-
-            # Deserialize the data
-            scores: torch.Tensor = torch.tensor(json.loads(score_record.score))
-
-            # Initialize the dictionaries with the correct types and default factories
-            # TODO @oom bro this should just be any task that's non-expired...
-            dojo_tasks_to_track: RidToHotKeyToTaskId = defaultdict(
-                lambda: defaultdict(str)
-            )
-            model_map: RidToModelMap = defaultdict(dict)
-            # TODO @oom task expiry dict can actually just be a field inside of our Validator's request
-            task_to_expiry: TaskExpiryDict = defaultdict(str)
-
-            for state in states:
-                if (
-                    state.request_id not in dojo_tasks_to_track
-                ):  # might not need to check
-                    dojo_tasks_to_track[state.request_id] = {}
-                dojo_tasks_to_track[state.request_id][state.miner_hotkey] = (
-                    state.task_id
-                )
-
-                if state.request_id not in model_map:
-                    model_map[state.request_id] = {}
-                model_map[state.request_id][state.obfuscated_model] = state.real_model
-
-                task_to_expiry[state.task_id] = state.expire_at
-
-            return {
-                "scores": scores,
-                "dojo_tasks_to_track": dojo_tasks_to_track,
-                "model_map": model_map,
-                "task_to_expiry": task_to_expiry,
-            }
-
-        except Exception as e:
-            logger.error(
-                f"Unexpected error occurred while loading validator state: {e}"
-            )
-            return None

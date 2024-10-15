@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import random
 import time
 import traceback
@@ -17,7 +18,7 @@ from tenacity import RetryError
 from torch.nn import functional as F
 
 import dojo
-from commons.data_manager import DataManager, ValidatorStateKeys
+from commons.data_manager import DataManager
 from commons.dataset.synthetic import SyntheticAPI
 from commons.dojo_task_tracker import DojoTaskTracker
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
@@ -25,6 +26,7 @@ from commons.orm import ORM
 from commons.scoring import Scoring
 from commons.utils import get_epoch_time, get_new_uuid, init_wandb, set_expire_time
 from database.client import connect_db
+from database.prisma.models import Score_Model
 from dojo.base.neuron import BaseNeuron
 from dojo.protocol import (
     CompletionResponses,
@@ -691,29 +693,39 @@ class Validator(BaseNeuron):
             logger.error(f"Failed to save validator state: {e}")
             pass
 
+    async def _load_state(self):
+        try:
+            await connect_db()
+            score_record = await Score_Model.prisma().find_first(
+                order={"created_at": "desc"}
+            )
+
+            if not score_record:
+                num_processed_tasks = await ORM.get_num_processed_tasks()
+                if num_processed_tasks > 0:
+                    logger.error(
+                        "Score record not found, but you have processed tasks."
+                    )
+                else:
+                    logger.warning(
+                        "Score record not found, and no tasks processed, this is okay if you're running for the first time."
+                    )
+                return None
+
+            scores: torch.Tensor = torch.tensor(json.loads(score_record.score))
+            logger.success(f"Loaded scores for validator: {scores=}")
+            self.scores = scores
+
+        except Exception as e:
+            logger.error(
+                f"Unexpected error occurred while loading validator state: {e}"
+            )
+            return None
+
     def load_state(self):
         """Loads the state of the validator from a file."""
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(connect_db())
-        # TODO @oom should only load scores tbh
-        state_data = loop.run_until_complete(DataManager.validator_load())
-        if state_data is None:
-            if self.step == 0:
-                logger.warning(
-                    "Failed to load validator state data, this is okay on start, or if you're running for the first time."
-                )
-            else:
-                logger.error("Failed to load validator state data")
-            return
-
-        self.scores = state_data[ValidatorStateKeys.SCORES]
-        DojoTaskTracker._rid_to_mhotkey_to_task_id = state_data[
-            ValidatorStateKeys.DOJO_TASKS_TO_TRACK
-        ]
-        DojoTaskTracker._rid_to_model_map = state_data[ValidatorStateKeys.MODEL_MAP]
-        DojoTaskTracker._task_to_expiry = state_data[ValidatorStateKeys.TASK_TO_EXPIRY]
-
-        logger.info(f"Scores state: {self.scores}")
+        loop.run_until_complete(self._load_state())
 
     @classmethod
     async def log_validator_status(cls):

@@ -222,3 +222,10 @@ class ORM:
         except Exception as e:
             logger.error(f"Failed to get feedback request by request_id: {e}")
             return None
+
+
+    @staticmethod
+    async def get_num_processed_tasks() -> int:
+        return await Feedback_Request_Model.prisma().count(
+            where={"is_processed": True, "parent_id": None}
+        )
