@@ -1,27 +1,13 @@
 import json
-from typing import List
 
 import torch
 from bittensor.btlogging import logging as logger
 from strenum import StrEnum
 
-from commons.exceptions import (
-    InvalidCompletion,
-    InvalidMinerResponse,
-    InvalidTask,
-)
-from database.client import transaction
-from database.mappers import (
-    map_child_feedback_request_to_model,
-    map_completion_response_to_model,
-    map_criteria_type_to_model,
-    map_parent_feedback_request_to_model,
-)
 from database.prisma._fields import Json
-from database.prisma.models import Feedback_Request_Model, Score_Model
+from database.prisma.models import Score_Model
 from database.prisma.types import Score_ModelCreateInput, Score_ModelUpdateInput
 from dojo.protocol import (
-    FeedbackRequest,
     RidToHotKeyToTaskId,
     RidToModelMap,
     TaskExpiryDict,
@@ -46,90 +32,6 @@ class DataManager:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-
-    @staticmethod
-    async def save_task(
-        validator_request: FeedbackRequest, miner_responses: List[FeedbackRequest]
-    ) -> Feedback_Request_Model | None:
-        """Saves a task, which consists of both the validator's request and the miners' responses.
-
-        Args:
-            validator_request (FeedbackRequest): The request made by the validator.
-            miner_responses (List[FeedbackRequest]): The responses made by the miners.
-
-        Returns:
-            Feedback_Request_Model | None: Only validator's feedback request model, or None if failed.
-        """
-        try:
-            feedback_request_model: Feedback_Request_Model | None = None
-            async with transaction() as tx:
-                logger.trace("Starting transaction for saving task.")
-
-                feedback_request_model = await tx.feedback_request_model.create(
-                    data=map_parent_feedback_request_to_model(validator_request)
-                )
-
-                # Create related criteria types
-                criteria_create_input = [
-                    map_criteria_type_to_model(criteria, feedback_request_model.id)
-                    for criteria in validator_request.criteria_types
-                ]
-                await tx.criteria_type_model.create_many(criteria_create_input)
-
-                # Create related miner responses (child) and their completion responses
-                created_miner_models: list[Feedback_Request_Model] = []
-                for miner_response in miner_responses:
-                    try:
-                        create_miner_model_input = map_child_feedback_request_to_model(
-                            miner_response,
-                            feedback_request_model.id,
-                            expire_at=feedback_request_model.expire_at,
-                        )
-
-                        created_miner_model = await tx.feedback_request_model.create(
-                            data=create_miner_model_input
-                        )
-
-                        created_miner_models.append(created_miner_model)
-
-                        # Create related completions for miner responses
-                        for completion in miner_response.completion_responses:
-                            completion_input = map_completion_response_to_model(
-                                completion, created_miner_model.id
-                            )
-                            await tx.completion_response_model.create(
-                                data=completion_input
-                            )
-                            logger.trace(
-                                f"Created completion response: {completion_input}"
-                            )
-
-                    # we catch exceptions here because whether a miner responds well should not affect other miners
-                    except InvalidMinerResponse as e:
-                        miner_hotkey = (
-                            miner_response.axon.hotkey if miner_response.axon else "??"
-                        )
-                        logger.debug(
-                            f"Miner response from hotkey: {miner_hotkey} is invalid: {e}"
-                        )
-                    except InvalidCompletion as e:
-                        miner_hotkey = (
-                            miner_response.axon.hotkey if miner_response.axon else "??"
-                        )
-                        logger.debug(
-                            f"Completion response from hotkey: {miner_hotkey} is invalid: {e}"
-                        )
-
-                if len(created_miner_models) == 0:
-                    raise InvalidTask(
-                        "A task must consist of at least one miner response, along with validator's request"
-                    )
-
-                feedback_request_model.child_requests = created_miner_models
-            return feedback_request_model
-        except Exception as e:
-            logger.error(f"Failed to save dendrite query response: {e}")
-            return None
 
     @classmethod
     async def validator_save(
