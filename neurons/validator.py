@@ -21,7 +21,6 @@ import dojo
 from commons.dataset.synthetic import SyntheticAPI
 from commons.exceptions import EmptyScores, InvalidMinerResponse
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
-from commons.objects import ObjectManager
 from commons.orm import ORM
 from commons.scoring import Scoring
 from commons.utils import get_epoch_time, get_new_uuid, init_wandb, set_expire_time
@@ -733,9 +732,8 @@ class Validator(BaseNeuron):
             logger.info(f"Validator running... {time.time()}")
             await asyncio.sleep(dojo.VALIDATOR_STATUS)
 
-    @classmethod
     async def _get_task_results_from_miner(
-        cls, miner_hotkey: str, task_id: str
+        self, miner_hotkey: str, task_id: str
     ) -> list[TaskResult]:
         """Fetch task results from the miner's Axon using Dendrite."""
         try:
@@ -743,24 +741,21 @@ class Validator(BaseNeuron):
                 f"Fetching task result from miner {miner_hotkey} for task {task_id}"
             )
 
-            validator = ObjectManager.get_validator()
-
-            dendrite: bt.dendrite = validator.dendrite
-            metagraph = validator.metagraph
-
-            if not dendrite:
+            if not self.dendrite:
                 raise ValueError("Dendrite not initialized")
 
             # Prepare the synapse (data request) that will be sent via Dendrite
             task_synapse = TaskResultRequest(task_id=task_id)
 
             # Use Dendrite to communicate with the Axon
-            miner_axon = metagraph.axons[metagraph.hotkeys.index(miner_hotkey)]
+            miner_axon = self.metagraph.axons[
+                self.metagraph.hotkeys.index(miner_hotkey)
+            ]
             if not miner_axon:
                 raise ValueError(f"Miner Axon not found for hotkey: {miner_hotkey}")
 
             # Send the request via Dendrite and get the response
-            response = await dendrite.forward(
+            response: list[TaskResultRequest] = await self.dendrite.forward(  # type: ignore
                 axons=[miner_axon], synapse=task_synapse, deserialize=False
             )
 
@@ -781,15 +776,13 @@ class Validator(BaseNeuron):
             logger.error(f"Error fetching task result from miner {miner_hotkey}: {e}")
             return []
 
-    @classmethod
-    async def monitor_task_completions(cls):
+    async def monitor_task_completions(self):
         SLEEP_SECONDS = 30
         await asyncio.sleep(dojo.DOJO_TASK_MONITORING)
 
-        while not cls._should_exit:
+        while not self._should_exit:
             try:
-                validator = ObjectManager.get_validator()
-                validator_hotkey = validator.wallet.hotkey.ss58_address
+                validator_hotkey = self.wallet.hotkey.ss58_address
                 batch_id = 0
                 async for task_batch, has_more_batches in ORM.get_unexpired_tasks(
                     validator_hotkeys=[validator_hotkey],
@@ -829,7 +822,7 @@ class Validator(BaseNeuron):
 
                             miner_hotkey = miner_response.axon.hotkey
                             task_id = miner_response.dojo_task_id
-                            task_results = await cls._get_task_results_from_miner(
+                            task_results = await self._get_task_results_from_miner(
                                 miner_hotkey, task_id
                             )
 
@@ -841,7 +834,7 @@ class Validator(BaseNeuron):
 
                             # Process task result
                             model_id_to_avg_rank, model_id_to_avg_score = (
-                                cls._calculate_averages(
+                                self._calculate_averages(
                                     task_results, obfuscated_to_real_model_id
                                 )
                             )
