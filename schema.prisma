@@ -18,23 +18,16 @@ enum CriteriaTypeEnum {
 
 model Ground_Truth_Model {
     id                  String @id @default(uuid())
-    request_id          String @unique
+    request_id          String
     obfuscated_model_id String
     real_model_id       String
+    rank_id             Int
 
-    feedback_requests Feedback_Request_Model[]
+    feedback_request    Feedback_Request_Model @relation(fields: [feedback_request_id], references: [id])
+    feedback_request_id String
+
+    @@unique([request_id, obfuscated_model_id, rank_id])
 }
-
-// to store mappings between which
-// model FeedbackRequestionRelation {
-//     id                String                      @id @default(uuid())
-//     parent_id String
-//     child_id  String
-//     parent_request    Feedback_Request_Model      @relation("ValiRequestId", fields: [parent_id], references: [id])
-//     child_request     Feedback_Request_Model      @relation("MinerRequestId", fields: [child_id], references: [id])
-//     completions       Completion_Response_Model[]
-//     criteria_types    Criteria_Type_Model[]
-// }
 
 model Feedback_Request_Model {
     id                String                      @id @unique @default(uuid())
@@ -49,8 +42,8 @@ model Feedback_Request_Model {
     expire_at         DateTime
     created_at        DateTime                    @default(now())
     updated_at        DateTime                    @updatedAt
-    ground_truth      Ground_Truth_Model?         @relation(fields: [ground_truth_id], references: [id])
-    ground_truth_id   String?
+
+    ground_truths     Ground_Truth_Model[]
 
     parent_request Feedback_Request_Model?  @relation("ParentChild", fields: [parent_id], references: [id])
     parent_id      String?
