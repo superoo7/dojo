@@ -259,18 +259,12 @@ class ORM:
         """
         try:
             async with transaction() as tx:
-                # Delete existing completion responses for the given request_id
-                await tx.completion_response_model.delete_many(
-                    where={"feedback_request_id": request_id}
-                )
-
-                # delete the existing completion_responses
                 # find the feedback request ids
                 miner_hotkeys = []
                 for miner_response in miner_responses:
                     if not miner_response.axon or not miner_response.axon.hotkey:
                         raise InvalidMinerResponse(
-                            f"Miner response {miner_response.id} must have a hotkey"
+                            f"Miner response {miner_response} must have a hotkey"
                         )
                     miner_hotkeys.append(miner_response.axon.hotkey)
 
