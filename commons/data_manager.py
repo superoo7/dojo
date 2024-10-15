@@ -7,6 +7,10 @@ import torch
 from bittensor.btlogging import logging as logger
 from strenum import StrEnum
 
+from commons.exceptions import (
+    InvalidCompletion,
+    InvalidMinerResponse,
+)
 from database.client import transaction
 from database.mappers import (
     map_child_feedback_request_to_model,
@@ -44,57 +48,71 @@ class DataManager:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    @classmethod
-    async def save_dendrite_response(
-        cls, response: DendriteQueryResponse
+    @staticmethod
+    async def save_task(
+        validator_request: FeedbackRequest, miner_responses: List[FeedbackRequest]
     ) -> Feedback_Request_Model | None:
         try:
             feedback_request_model: Feedback_Request_Model | None = None
             async with transaction() as tx:
-                logger.info(
-                    f"Saving dendrite query response for request_id: {response.request.request_id}"
-                )
-                logger.trace("Starting transaction for saving dendrite query response.")
+                logger.trace("Starting transaction for saving task.")
 
-                # Create the parent feedback request first
                 feedback_request_model = await tx.feedback_request_model.create(
-                    data=map_parent_feedback_request_to_model(response.request)
+                    data=map_parent_feedback_request_to_model(validator_request)
                 )
 
                 # Create related criteria types
-                criteria_models = [
+                criteria_create_input = [
                     map_criteria_type_to_model(criteria, feedback_request_model.id)
-                    for criteria in response.request.criteria_types
+                    for criteria in validator_request.criteria_types
                 ]
-                await tx.criteria_type_model.create_many(criteria_models)
+                await tx.criteria_type_model.create_many(criteria_create_input)
 
                 # Create related miner responses (child) and their completion responses
-                miner_responses: list[Feedback_Request_Model] = []
-                for miner_response in response.miner_responses:
-                    miner_response_data = map_child_feedback_request_to_model(
-                        miner_response,
-                        feedback_request_model.id,
-                    )
-
-                    if not miner_response_data.get("dojo_task_id"):
-                        logger.error("Dojo task id is required")
-                        raise ValueError("Dojo task id is required")
-
-                    miner_response_model = await tx.feedback_request_model.create(
-                        data=miner_response_data
-                    )
-
-                    miner_responses.append(miner_response_model)
-
-                    # Create related completions for miner responses
-                    for completion in miner_response.completion_responses:
-                        completion_data = map_completion_response_to_model(
-                            completion, miner_response_model.id
+                created_miner_models: list[Feedback_Request_Model] = []
+                for miner_response in miner_responses:
+                    try:
+                        create_miner_model_input = map_child_feedback_request_to_model(
+                            miner_response,
+                            feedback_request_model.id,
+                            expire_at=feedback_request_model.expire_at,
                         )
-                        await tx.completion_response_model.create(data=completion_data)
-                        logger.trace(f"Created completion response: {completion_data}")
 
-                feedback_request_model.child_requests = miner_responses
+                        created_miner_model = await tx.feedback_request_model.create(
+                            data=create_miner_model_input
+                        )
+
+                        created_miner_models.append(created_miner_model)
+
+                        # Create related completions for miner responses
+                        for completion in miner_response.completion_responses:
+                            completion_input = map_completion_response_to_model(
+                                completion, created_miner_model.id
+                            )
+                            await tx.completion_response_model.create(
+                                data=completion_input
+                            )
+                            logger.trace(
+                                f"Created completion response: {completion_input}"
+                            )
+
+                    # we catch exceptions here because whether a miner responds well should not affect other miners
+                    except InvalidMinerResponse as e:
+                        miner_hotkey = (
+                            miner_response.axon.hotkey if miner_response.axon else "??"
+                        )
+                        logger.debug(
+                            f"Miner response from hotkey: {miner_hotkey} is invalid: {e}"
+                        )
+                    except InvalidCompletion as e:
+                        miner_hotkey = (
+                            miner_response.axon.hotkey if miner_response.axon else "??"
+                        )
+                        logger.debug(
+                            f"Completion response from hotkey: {miner_hotkey} is invalid: {e}"
+                        )
+
+                feedback_request_model.child_requests = created_miner_models
             return feedback_request_model
         except Exception as e:
             logger.error(f"Failed to save dendrite query response: {e}")
@@ -153,41 +171,6 @@ class DataManager:
         except Exception as e:
             logger.error(f"Failed to get feedback request by request_id: {e}")
             return None
-
-    @classmethod
-    async def remove_responses(cls, responses: List[DendriteQueryResponse]) -> bool:
-        try:
-            async with transaction() as tx:
-                request_ids = []
-                for response in responses:
-                    request_id = response.request.request_id
-                    request_ids.append(request_id)
-
-                    # Delete completion responses associated with the miner responses
-                    await tx.completion_response_model.delete_many(
-                        where={"miner_response": {"is": {"request_id": request_id}}}
-                    )
-
-                    # Delete miner responses associated with the feedback request
-                    await tx.miner_response_model.delete_many(
-                        where={"request_id": request_id}
-                    )
-
-                    # Delete criteria types associated with the feedback request
-                    await tx.criteria_type_model.delete_many(
-                        where={"request_id": request_id}
-                    )
-
-                    # Delete the feedback request itself
-                    await tx.feedback_request_model.delete_many(
-                        where={"request_id": request_id}
-                    )
-
-            logger.success(f"Successfully removed responses for {request_ids} requests")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to remove responses: {e}")
-            return False
 
     @classmethod
     async def validator_save(

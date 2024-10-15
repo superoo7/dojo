@@ -152,7 +152,7 @@ class ORM:
         yield [], False
 
     @staticmethod
-    async def mark_tasks_processed_by_request_ids(request_ids: list[str]):
+    async def mark_tasks_processed_by_request_ids(request_ids: list[str]) -> None:
         """Mark records associated with validator's request and miner's responses as processed.
 
         Args:

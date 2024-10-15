@@ -353,6 +353,10 @@ def set_expire_time(expire_in_seconds: int) -> str:
     )
 
 
+def datetime_as_utc(datetime: datetime) -> datetime:
+    return datetime.replace(microsecond=0, tzinfo=timezone.utc)
+
+
 def is_valid_expiry(expire_at: str) -> bool:
     """
     Checks if the given expiry time is not None and falls within a reasonable time period.

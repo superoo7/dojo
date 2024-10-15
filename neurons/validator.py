@@ -482,8 +482,8 @@ class Validator(BaseNeuron):
         )
 
         logger.debug("Attempting to saving dendrite response")
-        fb_request_model = await DataManager.save_dendrite_response(
-            response=response_data
+        fb_request_model = await DataManager.save_task(
+            validator_request=synapse, miner_responses=valid_miner_responses
         )
 
         if fb_request_model is None:
@@ -695,6 +695,7 @@ class Validator(BaseNeuron):
         """Loads the state of the validator from a file."""
         loop = asyncio.get_event_loop()
         loop.run_until_complete(connect_db())
+        # TODO @oom should only load scores tbh
         state_data = loop.run_until_complete(DataManager.validator_load())
         if state_data is None:
             if self.step == 0:
