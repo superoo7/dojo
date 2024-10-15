@@ -484,18 +484,18 @@ class Validator(BaseNeuron):
         )
 
         logger.debug("Attempting to saving dendrite response")
-        fb_request_model = await DataManager.save_task(
+        vali_request_model = await ORM.save_task(
             validator_request=synapse, miner_responses=valid_miner_responses
         )
 
-        if fb_request_model is None:
+        if vali_request_model is None:
             logger.error("Failed to save dendrite response")
             return
 
         logger.debug("Attempting to update task map")
         await DojoTaskTracker.update_task_map(
             synapse.request_id,
-            fb_request_model,
+            vali_request_model,
             obfuscated_model_to_model,
         )
 
