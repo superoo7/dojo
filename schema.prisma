@@ -30,20 +30,20 @@ model Ground_Truth_Model {
 }
 
 model Feedback_Request_Model {
-    id                String                      @id @unique @default(uuid())
-    request_id        String
-    prompt            String
-    completions       Completion_Response_Model[]
-    task_type         String
-    criteria_types    Criteria_Type_Model[]
-    is_from_validator Boolean                     @default(false)
-    dojo_task_id      String?
-    hotkey            String
-    expire_at         DateTime
-    created_at        DateTime                    @default(now())
-    updated_at        DateTime                    @updatedAt
+    id             String                      @id @unique @default(uuid())
+    request_id     String
+    prompt         String
+    completions    Completion_Response_Model[]
+    task_type      String
+    criteria_types Criteria_Type_Model[]
+    is_processed   Boolean                     @default(false)
+    dojo_task_id   String?
+    hotkey         String
+    expire_at      DateTime
+    created_at     DateTime                    @default(now())
+    updated_at     DateTime                    @updatedAt
 
-    ground_truths     Ground_Truth_Model[]
+    ground_truths Ground_Truth_Model[]
 
     parent_request Feedback_Request_Model?  @relation("ParentChild", fields: [parent_id], references: [id])
     parent_id      String?
