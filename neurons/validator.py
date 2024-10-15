@@ -18,7 +18,6 @@ from torch.nn import functional as F
 
 import dojo
 from commons.dataset.synthetic import SyntheticAPI
-from commons.dojo_task_tracker import DojoTaskTracker
 from commons.exceptions import EmptyScores
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
 from commons.orm import ORM
@@ -119,14 +118,9 @@ class Validator(BaseNeuron):
                         )
 
                         if not hotkey_to_score:
-                            request_id = task.request.request_id
-                            try:
-                                # TODO @oom this class attr shouldn't exist anymore
-                                del DojoTaskTracker._rid_to_mhotkey_to_task_id[
-                                    request_id
-                                ]
-                            except KeyError:
-                                pass
+                            logger.info(
+                                "Did not manage to generate a dict of hotkey to score"
+                            )
                             continue
 
                         self.update_scores(hotkey_to_scores=hotkey_to_score)
@@ -204,7 +198,6 @@ class Validator(BaseNeuron):
                         asyncio.create_task(log_wandb())
 
                         # once we have scored a response, just remove it
-                        # TODO @oom should set the is_processed flag
                         processed_request_ids.append(task.request.request_id)
 
                 if processed_request_ids:
@@ -489,13 +482,6 @@ class Validator(BaseNeuron):
         if vali_request_model is None:
             logger.error("Failed to save dendrite response")
             return
-
-        logger.debug("Attempting to update task map")
-        await DojoTaskTracker.update_task_map(
-            synapse.request_id,
-            vali_request_model,
-            obfuscated_model_to_model,
-        )
 
         # saving response
         logger.success(
