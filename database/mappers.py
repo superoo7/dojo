@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 import bittensor as bt
 from loguru import logger
@@ -13,7 +13,6 @@ from database.prisma.types import (
     Completion_Response_ModelCreateInput,
     Criteria_Type_ModelCreateInput,
     Feedback_Request_ModelCreateInput,
-    Miner_Response_ModelCreateInput,
 )
 from dojo.protocol import (
     CompletionResponses,
@@ -165,7 +164,7 @@ def map_model_to_dendrite_query_response(
         ]
 
         completions: list[CompletionResponses] = []
-        if model.miner_responses is not None:
+        if model.child_requests is not None:
             completions = [
                 CompletionResponses(
                     completion_id=completion.completion_id,
@@ -174,7 +173,7 @@ def map_model_to_dendrite_query_response(
                     rank_id=completion.rank_id,
                     score=completion.score,
                 )
-                for completion in model.miner_responses[0].completions or []
+                for completion in model.child_requests[0].completions or []
             ]
 
         # Add TASK_DEADLINE to created_at
@@ -216,3 +215,81 @@ def map_model_to_dendrite_query_response(
         return DendriteQueryResponse(request=request, miner_responses=miner_responses)
     except Exception as e:
         raise ValueError(f"Failed to map model to dendrite query response: {e}")
+
+
+def map_feedback_request_model_to_feedback_request(
+    model: Feedback_Request_Model, is_miner: bool = False
+) -> FeedbackRequest:
+    """Smaller function to map Feedback_Request_Model to FeedbackRequest
+
+    Args:
+        model (Feedback_Request_Model): Feedback_Request_Model from database.
+        is_miner (bool, optional): If we're converting for a validator request or miner response.
+        Defaults to False.
+
+    Raises:
+        ValueError: If failed to map.
+
+    Returns:
+        FeedbackRequest: FeedbackRequest object.
+    """
+
+    try:
+        # Map criteria types
+        criteria_types = [
+            map_criteria_type_model_to_criteria_type(criteria)
+            for criteria in model.criteria_types or []
+        ]
+
+        # Map completion responses
+        completion_responses = [
+            CompletionResponses(
+                completion_id=completion.completion_id,
+                model=completion.model,
+                completion=json.loads(completion.completion),
+                rank_id=completion.rank_id,
+                score=completion.score,
+            )
+            for completion in model.completions or []
+        ]
+
+        ground_truth: dict[str, int] = {}
+
+        if model.ground_truths:
+            for gt in model.ground_truths:
+                ground_truth[gt.obfuscated_model_id] = gt.rank_id
+
+        if is_miner:
+            # Create FeedbackRequest object
+            feedback_request = FeedbackRequest(
+                request_id=model.request_id,
+                prompt=model.prompt,
+                task_type=model.task_type,
+                criteria_types=criteria_types,
+                completion_responses=completion_responses,
+                dojo_task_id=model.dojo_task_id,
+                expire_at=model.expire_at.replace(microsecond=0, tzinfo=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                axon=bt.TerminalInfo(hotkey=model.hotkey) if model.hotkey else None,
+            )
+        else:
+            feedback_request = FeedbackRequest(
+                request_id=model.request_id,
+                prompt=model.prompt,
+                task_type=model.task_type,
+                criteria_types=criteria_types,
+                completion_responses=completion_responses,
+                dojo_task_id=model.dojo_task_id,
+                expire_at=model.expire_at.replace(microsecond=0, tzinfo=timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                dendrite=bt.TerminalInfo(hotkey=model.hotkey) if model.hotkey else None,
+                ground_truth=ground_truth,
+            )
+
+        return feedback_request
+    except Exception as e:
+        raise ValueError(
+            f"Failed to map Feedback_Request_Model to FeedbackRequest: {e}"
+        )
