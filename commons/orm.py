@@ -2,20 +2,14 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, List
 
 from commons.exceptions import NoNewUnexpiredTasksYet, UnexpiredTasksAlreadyProcessed
-from database.mappers import (
-    map_feedback_request_model_to_feedback_request,
-)
-from database.prisma.models import (
-    Feedback_Request_Model,
-)
+from database.mappers import map_feedback_request_model_to_feedback_request
+from database.prisma.models import Feedback_Request_Model, Ground_Truth_Model
 from database.prisma.types import (
     Feedback_Request_ModelInclude,
     Feedback_Request_ModelWhereInput,
 )
 from dojo import TASK_DEADLINE
-from dojo.protocol import (
-    DendriteQueryResponse,
-)
+from dojo.protocol import DendriteQueryResponse
 
 
 class ORM:
@@ -141,3 +135,11 @@ class ORM:
             yield responses, has_more_batches
 
         yield [], False
+
+    @staticmethod
+    async def get_real_model_ids(request_id: str) -> dict[str, str]:
+        """Fetches a mapping of obfuscated model IDs to real model IDs for a given request ID."""
+        ground_truths = await Ground_Truth_Model.prisma().find_many(
+            where={"request_id": request_id}
+        )
+        return {gt.obfuscated_model_id: gt.real_model_id for gt in ground_truths}
