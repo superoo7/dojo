@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import random
 import time
 import traceback
@@ -17,7 +18,7 @@ from tenacity import RetryError
 from torch.nn import functional as F
 
 import dojo
-from commons.data_manager import DataManager, ValidatorStateKeys
+from commons.data_manager import DataManager
 from commons.dataset.synthetic import SyntheticAPI
 from commons.dojo_task_tracker import DojoTaskTracker
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
@@ -25,6 +26,7 @@ from commons.orm import ORM
 from commons.scoring import Scoring
 from commons.utils import get_epoch_time, get_new_uuid, init_wandb, set_expire_time
 from database.client import connect_db
+from database.prisma.models import Score_Model
 from dojo.base.neuron import BaseNeuron
 from dojo.protocol import (
     CompletionResponses,
@@ -88,6 +90,7 @@ class Validator(BaseNeuron):
                 batch_id = 0
                 # number of tasks to process in a batch
                 batch_size = 10
+                processed_request_ids = []
                 async for (
                     task_batch,
                     has_more_batches,
@@ -104,22 +107,21 @@ class Validator(BaseNeuron):
                     logger.info(
                         f"Processing batch {batch_id}, batch size: {batch_size}"
                     )
-
-                    logger.info(
-                        f"Got {len(task_batch)} requests past deadline and ready to score"
-                    )
-                    for d in task_batch:
+                    for task in task_batch:
                         criteria_to_miner_score, hotkey_to_score = (
                             Scoring.calculate_score(
-                                criteria_types=d.request.criteria_types,
-                                request=d.request,
-                                miner_responses=d.miner_responses,
+                                criteria_types=task.request.criteria_types,
+                                request=task.request,
+                                miner_responses=task.miner_responses,
                             )
                         )
-                        logger.trace(f"Got hotkey to score: {hotkey_to_score}")
+                        logger.debug(f"Got hotkey to score: {hotkey_to_score}")
+                        logger.debug(
+                            f"Initially had {len(task.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
+                        )
 
                         if not hotkey_to_score:
-                            request_id = d.request.request_id
+                            request_id = task.request.request_id
                             try:
                                 # TODO @oom this class attr shouldn't exist anymore
                                 del DojoTaskTracker._rid_to_mhotkey_to_task_id[
@@ -127,17 +129,12 @@ class Validator(BaseNeuron):
                                 ]
                             except KeyError:
                                 pass
-                            await DataManager.remove_responses([d])
                             continue
-
-                        logger.trace(
-                            f"Initially had {len(d.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
-                        )
 
                         self.update_scores(hotkey_to_scores=hotkey_to_score)
                         await self.send_scores(
                             synapse=ScoringResult(
-                                request_id=d.request.request_id,
+                                request_id=task.request.request_id,
                                 hotkey_to_scores=hotkey_to_score,
                             ),
                             hotkeys=list(hotkey_to_score.keys()),
@@ -190,17 +187,17 @@ class Validator(BaseNeuron):
 
                             wandb_data = jsonable_encoder(
                                 {
-                                    "task": d.request.task_type,
-                                    "criteria": d.request.criteria_types,
-                                    "prompt": d.request.prompt,
+                                    "task": task.request.task_type,
+                                    "criteria": task.request.criteria_types,
+                                    "prompt": task.request.prompt,
                                     "completions": jsonable_encoder(
-                                        d.request.completion_responses
+                                        task.request.completion_responses
                                     ),
                                     "num_completions": len(
-                                        d.request.completion_responses
+                                        task.request.completion_responses
                                     ),
                                     "scores": score_data,
-                                    "num_responses": len(d.miner_responses),
+                                    "num_responses": len(task.miner_responses),
                                 }
                             )
 
@@ -210,7 +207,10 @@ class Validator(BaseNeuron):
 
                         # once we have scored a response, just remove it
                         # TODO @oom should set the is_processed flag
-                        await DataManager.remove_responses([d])
+                        processed_request_ids.append(task.request.request_id)
+
+                if processed_request_ids:
+                    await ORM.mark_tasks_processed_by_request_ids(processed_request_ids)
 
             except Exception:
                 traceback.print_exc()
@@ -484,8 +484,8 @@ class Validator(BaseNeuron):
         )
 
         logger.debug("Attempting to saving dendrite response")
-        fb_request_model = await DataManager.save_dendrite_response(
-            response=response_data
+        fb_request_model = await DataManager.save_task(
+            validator_request=synapse, miner_responses=valid_miner_responses
         )
 
         if fb_request_model is None:
@@ -637,10 +637,13 @@ class Validator(BaseNeuron):
             new_moving_average[:min_len] = self.scores[:min_len]
             self.scores = new_moving_average
 
-    def update_scores(self, hotkey_to_scores):
+    def update_scores(self, hotkey_to_scores: dict[str, float]):
         """Performs exponential moving average on the scores based on the rewards received from the miners,
         after setting the self.scores variable here, `set_weights` will be called to set the weights on chain.
         """
+        if not hotkey_to_scores:
+            logger.warning("hotkey_to_scores is empty, skipping score update")
+            return
 
         nan_value_indices = np.isnan(list(hotkey_to_scores.values()))
         if nan_value_indices.any():
@@ -654,7 +657,7 @@ class Validator(BaseNeuron):
         for index, (key, value) in enumerate(hotkey_to_scores.items()):
             # handle nan values
             if nan_value_indices[index]:
-                rewards[key] = 0.0
+                rewards[key] = 0.0  # type: ignore
             # search metagraph for hotkey and grab uid
             try:
                 uid = neuron_hotkeys.index(key)
@@ -690,28 +693,39 @@ class Validator(BaseNeuron):
             logger.error(f"Failed to save validator state: {e}")
             pass
 
+    async def _load_state(self):
+        try:
+            await connect_db()
+            score_record = await Score_Model.prisma().find_first(
+                order={"created_at": "desc"}
+            )
+
+            if not score_record:
+                num_processed_tasks = await ORM.get_num_processed_tasks()
+                if num_processed_tasks > 0:
+                    logger.error(
+                        "Score record not found, but you have processed tasks."
+                    )
+                else:
+                    logger.warning(
+                        "Score record not found, and no tasks processed, this is okay if you're running for the first time."
+                    )
+                return None
+
+            scores: torch.Tensor = torch.tensor(json.loads(score_record.score))
+            logger.success(f"Loaded scores for validator: {scores=}")
+            self.scores = scores
+
+        except Exception as e:
+            logger.error(
+                f"Unexpected error occurred while loading validator state: {e}"
+            )
+            return None
+
     def load_state(self):
         """Loads the state of the validator from a file."""
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(connect_db())
-        state_data = loop.run_until_complete(DataManager.validator_load())
-        if state_data is None:
-            if self.step == 0:
-                logger.warning(
-                    "Failed to load validator state data, this is okay on start, or if you're running for the first time."
-                )
-            else:
-                logger.error("Failed to load validator state data")
-            return
-
-        self.scores = state_data[ValidatorStateKeys.SCORES]
-        DojoTaskTracker._rid_to_mhotkey_to_task_id = state_data[
-            ValidatorStateKeys.DOJO_TASKS_TO_TRACK
-        ]
-        DojoTaskTracker._rid_to_model_map = state_data[ValidatorStateKeys.MODEL_MAP]
-        DojoTaskTracker._task_to_expiry = state_data[ValidatorStateKeys.TASK_TO_EXPIRY]
-
-        logger.info(f"Scores state: {self.scores}")
+        loop.run_until_complete(self._load_state())
 
     @classmethod
     async def log_validator_status(cls):

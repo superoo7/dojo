@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 import bittensor as bt
 from loguru import logger
 
-import dojo
-from commons.utils import is_valid_expiry, set_expire_time
+from commons.exceptions import InvalidMinerResponse, InvalidValidatorRequest
+from commons.utils import datetime_as_utc
 from database.prisma import Json
 from database.prisma.enums import CriteriaTypeEnum
 from database.prisma.models import Criteria_Type_Model, Feedback_Request_Model
@@ -24,6 +24,10 @@ from dojo.protocol import (
     RankingCriteria,
     ScoreCriteria,
 )
+
+# ---------------------------------------------------------------------------- #
+#                 MAP PROTOCOL OBJECTS TO DATABASE MODEL INPUTS                #
+# ---------------------------------------------------------------------------- #
 
 
 def map_criteria_type_to_model(
@@ -98,81 +102,75 @@ def map_criteria_type_model_to_criteria_type(
 def map_completion_response_to_model(
     response: CompletionResponses, feedback_request_id: str
 ) -> Completion_Response_ModelCreateInput:
-    try:
-        result = Completion_Response_ModelCreateInput(
-            completion_id=response.completion_id,
-            model=response.model,
-            completion=Json(json.dumps(response.completion)),
-            rank_id=response.rank_id,
-            score=response.score,
-            feedback_request_id=feedback_request_id,
-        )
-        return result
-    except Exception as e:
-        raise ValueError(f"Failed to map completion response to model {e}")
+    result = Completion_Response_ModelCreateInput(
+        completion_id=response.completion_id,
+        model=response.model,
+        completion=Json(json.dumps(response.completion)),
+        rank_id=response.rank_id,
+        score=response.score,
+        feedback_request_id=feedback_request_id,
+    )
+    return result
 
 
 def map_parent_feedback_request_to_model(
     request: FeedbackRequest,
 ) -> Feedback_Request_ModelCreateInput:
-    try:
-        if not request.axon or not request.axon.hotkey:
-            raise ValueError("Validator Hotkey is required")
+    if not request.dendrite or not request.dendrite.hotkey:
+        raise InvalidValidatorRequest("Validator Hotkey is required")
 
-        expire_at = request.expire_at
-        if expire_at is None or is_valid_expiry(expire_at) is not True:
-            expire_at = set_expire_time(dojo.TASK_DEADLINE)
+    if not request.expire_at:
+        raise InvalidValidatorRequest("Expire at is required")
 
-        result = Feedback_Request_ModelCreateInput(
-            request_id=request.request_id,
-            task_type=request.task_type,
-            prompt=request.prompt,
-            hotkey=request.axon.hotkey,
-            expire_at=datetime.fromisoformat(expire_at),
-        )
+    expire_at = datetime.fromisoformat(request.expire_at)
+    if expire_at < datetime.now(timezone.utc):
+        raise InvalidValidatorRequest("Expire at must be in the future")
 
-        return result
-    except Exception as e:
-        raise ValueError(f"Failed to map parent feedback request to model {e}")
+    result = Feedback_Request_ModelCreateInput(
+        request_id=request.request_id,
+        task_type=request.task_type,
+        prompt=request.prompt,
+        hotkey=request.dendrite.hotkey,
+        expire_at=expire_at,
+    )
+
+    return result
 
 
 def map_child_feedback_request_to_model(
-    request: FeedbackRequest,
-    parent_id: str,
+    request: FeedbackRequest, parent_id: str, expire_at: datetime
 ) -> Feedback_Request_ModelCreateInput:
-    try:
-        if not request.axon or not request.axon.hotkey:
-            raise ValueError("Miner Hotkey is required")
+    if not request.axon or not request.axon.hotkey:
+        raise InvalidMinerResponse("Miner Hotkey is required")
 
-        if not parent_id:
-            raise ValueError("Parent ID is required")
+    if not parent_id:
+        raise InvalidMinerResponse("Parent ID is required")
 
-        if not request.dojo_task_id:
-            raise ValueError("Dojo Task ID is required")
+    if not request.dojo_task_id:
+        raise InvalidMinerResponse("Dojo Task ID is required")
 
-        expire_at = request.expire_at
-        if expire_at is None or is_valid_expiry(expire_at) is not True:
-            expire_at = set_expire_time(dojo.TASK_DEADLINE)
+    result = Feedback_Request_ModelCreateInput(
+        request_id=request.request_id,
+        task_type=request.task_type,
+        prompt=request.prompt,
+        hotkey=request.axon.hotkey,
+        expire_at=datetime_as_utc(expire_at),
+        dojo_task_id=request.dojo_task_id,
+        parent_id=parent_id,
+    )
 
-        result = Feedback_Request_ModelCreateInput(
-            request_id=request.request_id,
-            task_type=request.task_type,
-            prompt=request.prompt,
-            hotkey=request.axon.hotkey,
-            expire_at=datetime.fromisoformat(expire_at),
-            dojo_task_id=request.dojo_task_id,
-            parent_id=parent_id,
-        )
+    return result
 
-        return result
-    except Exception as e:
-        raise ValueError(f"Failed to map child feedback request to model {e}")
+
+# ---------------------------------------------------------------------------- #
+#               MAPPING DATABASE OBJECTS TO OUR PROTOCOL OBJECTS               #
+# ---------------------------------------------------------------------------- #
 
 
 def map_feedback_request_model_to_feedback_request(
     model: Feedback_Request_Model, is_miner: bool = False
 ) -> FeedbackRequest:
-    """Smaller function to map Feedback_Request_Model to FeedbackRequest
+    """Smaller function to map Feedback_Request_Model to FeedbackRequest, meant to be used when reading from database.
 
     Args:
         model (Feedback_Request_Model): Feedback_Request_Model from database.

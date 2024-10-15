@@ -175,9 +175,12 @@ class DojoTaskTracker:
                         await asyncio.sleep(SLEEP_SECONDS)
                         continue
 
-                    logger.info(
-                        f"Monitoring task completions {get_epoch_time()} for {len(task_batch)} requests"
-                    )
+                logger.info(
+                    f"Monitoring task completions {get_epoch_time()} for {len(cls._rid_to_mhotkey_to_task_id.keys())} requests"
+                )
+
+                # Clean up expired tasks before processing
+                await cls.remove_expired_tasks()
 
                 if not cls._rid_to_mhotkey_to_task_id:
                     await asyncio.sleep(SLEEP_SECONDS)
@@ -189,7 +192,7 @@ class DojoTaskTracker:
 
                     data: (
                         DendriteQueryResponse | None
-                    ) = await DataManager.get_by_request_id(request_id)
+                    ) = await ORM.get_task_by_request_id(request_id)
 
                     if not data or not data.request:
                         logger.error(
