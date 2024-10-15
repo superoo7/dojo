@@ -174,7 +174,6 @@ class DojoTaskTracker:
 
                 # Clean up expired tasks before processing
                 await cls.remove_expired_tasks()
-                await DataManager.remove_expired_tasks_from_storage()
 
                 if not cls._rid_to_mhotkey_to_task_id:
                     await asyncio.sleep(SLEEP_SECONDS)

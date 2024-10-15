@@ -1,6 +1,5 @@
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
 from typing import List
 
 import torch
@@ -30,6 +29,7 @@ from dojo.protocol import (
 )
 
 
+# TODO @oom remove this, it's unnecessary since we have prisma
 class ValidatorStateKeys(StrEnum):
     SCORES = "scores"
     DOJO_TASKS_TO_TRACK = "dojo_tasks_to_track"
@@ -240,8 +240,6 @@ class DataManager:
     @classmethod
     async def validator_load(cls) -> dict | None:
         try:
-            # Query the latest validator state
-            # TODO @oom to prevent loading the whole table into memory
             states: List[
                 Validator_State_Model
             ] = await Validator_State_Model.prisma().find_many()
@@ -298,61 +296,3 @@ class DataManager:
                 f"Unexpected error occurred while loading validator state: {e}"
             )
             return None
-
-    @staticmethod
-    async def remove_expired_tasks_from_storage():
-        try:
-            state_data = await DataManager.validator_load()
-            if not state_data:
-                logger.error(
-                    "Failed to load validator state while removing expired tasks, skipping"
-                )
-                return
-
-            # Identify expired tasks
-            current_time = datetime.now(timezone.utc)
-            task_to_expiry = state_data.get(ValidatorStateKeys.TASK_TO_EXPIRY, {})
-            expired_tasks = [
-                task_id
-                for task_id, expiry_time in task_to_expiry.items()
-                if datetime.fromisoformat(expiry_time) < current_time
-            ]
-
-            # Remove expired tasks from the database
-            for task_id in expired_tasks:
-                await Validator_State_Model.prisma().delete_many(
-                    where={"task_id": task_id}
-                )
-
-            # Update the in-memory state
-            for task_id in expired_tasks:
-                for request_id, hotkeys in list(
-                    state_data[ValidatorStateKeys.DOJO_TASKS_TO_TRACK].items()
-                ):
-                    for hotkey, t_id in list(hotkeys.items()):
-                        if t_id == task_id:
-                            del state_data[ValidatorStateKeys.DOJO_TASKS_TO_TRACK][
-                                request_id
-                            ][hotkey]
-                    if not state_data[ValidatorStateKeys.DOJO_TASKS_TO_TRACK][
-                        request_id
-                    ]:
-                        del state_data[ValidatorStateKeys.DOJO_TASKS_TO_TRACK][
-                            request_id
-                        ]
-                del task_to_expiry[task_id]
-
-            # Save the updated state
-            state_data[ValidatorStateKeys.TASK_TO_EXPIRY] = task_to_expiry
-            await DataManager.validator_save(
-                state_data[ValidatorStateKeys.SCORES],
-                state_data[ValidatorStateKeys.DOJO_TASKS_TO_TRACK],
-                state_data[ValidatorStateKeys.MODEL_MAP],
-                task_to_expiry,
-            )
-            if len(expired_tasks) > 0:
-                logger.info(
-                    f"Removed {len(expired_tasks)} expired tasks from database."
-                )
-        except Exception as e:
-            logger.error(f"Failed to remove expired tasks: {e}")
