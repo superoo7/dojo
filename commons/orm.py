@@ -1,6 +1,8 @@
+import json
 from datetime import datetime, timezone
 from typing import AsyncGenerator, List
 
+import torch
 from bittensor.btlogging import logging as logger
 
 from commons.exceptions import (
@@ -18,11 +20,18 @@ from database.mappers import (
     map_feedback_request_model_to_feedback_request,
     map_parent_feedback_request_to_model,
 )
+from database.prisma import Json
 from database.prisma.errors import PrismaError
-from database.prisma.models import Feedback_Request_Model, Ground_Truth_Model
+from database.prisma.models import (
+    Feedback_Request_Model,
+    Ground_Truth_Model,
+    Score_Model,
+)
 from database.prisma.types import (
     Feedback_Request_ModelInclude,
     Feedback_Request_ModelWhereInput,
+    Score_ModelCreateInput,
+    Score_ModelUpdateInput,
 )
 from dojo import TASK_DEADLINE
 from dojo.protocol import (
@@ -389,3 +398,30 @@ class ORM:
         except Exception as e:
             logger.error(f"Failed to save dendrite query response: {e}")
             return None
+
+    @staticmethod
+    async def create_or_update_validator_score(scores: torch.Tensor) -> None:
+        # Save scores as a single record
+        score_model = await Score_Model.prisma().find_first()
+        scores_list = scores.tolist()
+        if score_model:
+            await Score_Model.prisma().update(
+                where={"id": score_model.id},
+                data=Score_ModelUpdateInput(score=Json(json.dumps(scores_list))),
+            )
+        else:
+            await Score_Model.prisma().create(
+                data=Score_ModelCreateInput(
+                    score=Json(json.dumps(scores_list)),
+                )
+            )
+
+    @staticmethod
+    async def get_validator_score() -> torch.Tensor | None:
+        score_record = await Score_Model.prisma().find_first(
+            order={"created_at": "desc"}
+        )
+        if not score_record:
+            return None
+
+        return torch.tensor(json.loads(score_record.score))

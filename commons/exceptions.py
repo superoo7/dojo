@@ -44,3 +44,11 @@ class InvalidTask(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
+
+class EmptyScores(Exception):
+    """Exception raised when scores are invalid."""
+
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)

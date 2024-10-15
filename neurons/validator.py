@@ -1,6 +1,5 @@
 import asyncio
 import copy
-import json
 import random
 import time
 import traceback
@@ -18,15 +17,14 @@ from tenacity import RetryError
 from torch.nn import functional as F
 
 import dojo
-from commons.data_manager import DataManager
 from commons.dataset.synthetic import SyntheticAPI
 from commons.dojo_task_tracker import DojoTaskTracker
+from commons.exceptions import EmptyScores
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
 from commons.orm import ORM
 from commons.scoring import Scoring
 from commons.utils import get_epoch_time, get_new_uuid, init_wandb, set_expire_time
 from database.client import connect_db
-from database.prisma.models import Score_Model
 from dojo.base.neuron import BaseNeuron
 from dojo.protocol import (
     CompletionResponses,
@@ -677,18 +675,29 @@ class Validator(BaseNeuron):
         self.scores: torch.Tensor = alpha * rewards + (1 - alpha) * self.scores
         logger.debug(f"Updated scores: {self.scores}")
 
+    async def _save_state(
+        self,
+    ):
+        """Saves the state of the validator to the database."""
+        if self.step == 0:
+            return
+
+        try:
+            if np.count_nonzero(self.scores) == 0:
+                raise EmptyScores("Skipping save as scores are all empty")
+
+            await ORM.create_or_update_validator_score(self.scores)
+            logger.success(f"📦 Saved validator state with scores: {self.scores}")
+        except EmptyScores as e:
+            logger.debug(f"No need to to save validator state: {e}")
+        except Exception as e:
+            logger.error(f"Failed to save validator state: {e}")
+
     def save_state(self):
         """Saves the state of the validator to a file."""
         try:
             loop = asyncio.get_event_loop()
-            loop.run_until_complete(
-                DataManager.validator_save(
-                    self.scores,
-                    DojoTaskTracker._rid_to_mhotkey_to_task_id,
-                    DojoTaskTracker._rid_to_model_map,
-                    DojoTaskTracker._task_to_expiry,
-                )
-            )
+            loop.run_until_complete(self._save_state())
         except Exception as e:
             logger.error(f"Failed to save validator state: {e}")
             pass
@@ -696,11 +705,9 @@ class Validator(BaseNeuron):
     async def _load_state(self):
         try:
             await connect_db()
-            score_record = await Score_Model.prisma().find_first(
-                order={"created_at": "desc"}
-            )
+            scores = await ORM.get_validator_score()
 
-            if not score_record:
+            if not scores:
                 num_processed_tasks = await ORM.get_num_processed_tasks()
                 if num_processed_tasks > 0:
                     logger.error(
@@ -712,8 +719,7 @@ class Validator(BaseNeuron):
                     )
                 return None
 
-            scores: torch.Tensor = torch.tensor(json.loads(score_record.score))
-            logger.success(f"Loaded scores for validator: {scores=}")
+            logger.success(f"Loaded validator state: {scores=}")
             self.scores = scores
 
         except Exception as e:
