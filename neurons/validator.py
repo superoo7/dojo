@@ -229,14 +229,14 @@ class Validator(BaseNeuron):
             try:
                 all_miner_uids = extract_miner_uids(metagraph=self.metagraph)
                 logger.debug(f"Sending heartbeats to {len(all_miner_uids)} miners")
-                axons: List[bt.AxonInfo] = [
+                axons: list[bt.AxonInfo] = [
                     self.metagraph.axons[uid]
                     for uid in all_miner_uids
                     if self.metagraph.axons[uid].hotkey.casefold()
                     != self.wallet.hotkey.ss58_address.casefold()
                 ]
 
-                responses: List[Heartbeat] = await self.dendrite.forward(
+                responses: List[Heartbeat] = await self.dendrite.forward(  # type: ignore
                     axons=axons, synapse=Heartbeat(), deserialize=False, timeout=12
                 )
                 active_hotkeys = [r.axon.hotkey for r in responses if r.ack and r.axon]
@@ -476,7 +476,10 @@ class Validator(BaseNeuron):
 
         logger.debug("Attempting to saving dendrite response")
         vali_request_model = await ORM.save_task(
-            validator_request=synapse, miner_responses=valid_miner_responses
+            validator_request=synapse,
+            miner_responses=valid_miner_responses,
+            # TODO the way we save obfuscated models is a bit redundant atm
+            ground_truth=data.ground_truth,
         )
 
         if vali_request_model is None:

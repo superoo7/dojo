@@ -30,6 +30,7 @@ from database.prisma.models import (
 from database.prisma.types import (
     Feedback_Request_ModelInclude,
     Feedback_Request_ModelWhereInput,
+    Ground_Truth_ModelCreateInput,
     Score_ModelCreateInput,
     Score_ModelUpdateInput,
 )
@@ -311,13 +312,16 @@ class ORM:
 
     @staticmethod
     async def save_task(
-        validator_request: FeedbackRequest, miner_responses: List[FeedbackRequest]
+        validator_request: FeedbackRequest,
+        miner_responses: List[FeedbackRequest],
+        ground_truth: dict[str, int],
     ) -> Feedback_Request_Model | None:
         """Saves a task, which consists of both the validator's request and the miners' responses.
 
         Args:
             validator_request (FeedbackRequest): The request made by the validator.
             miner_responses (List[FeedbackRequest]): The responses made by the miners.
+            ground_truth (dict[str, str]): The ground truth for the task, where dict
 
         Returns:
             Feedback_Request_Model | None: Only validator's feedback request model, or None if failed.
@@ -385,6 +389,19 @@ class ORM:
                 if len(created_miner_models) == 0:
                     raise InvalidTask(
                         "A task must consist of at least one miner response, along with validator's request"
+                    )
+
+                # this is dependent on how we obfuscate in `validator.send_request`
+                for completion_id, rank_id in ground_truth.items():
+                    gt_create_input = {
+                        "rank_id": rank_id,
+                        "obfuscated_model_id": completion_id,
+                        "request_id": validator_request.request_id,
+                        "real_model_id": completion_id,
+                        "feedback_request_id": feedback_request_model.id,
+                    }
+                    await tx.ground_truth_model.create(
+                        data=Ground_Truth_ModelCreateInput(**gt_create_input)
                     )
 
                 feedback_request_model.child_requests = created_miner_models
