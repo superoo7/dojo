@@ -232,7 +232,7 @@ btcli s register --wallet.name coldkey --wallet.hotkey hotkey --netuid 98 --subt
 
 ## Mining
 
-> **Note:** Modify the env file by commenting or uncommenting the subtensor-related configurations to connect to either the testnet or mainnet, specifically the `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
+> **Note:** To connect to testnet, uncomment the testnet related configuration, specifically `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
 
 ### Option 1: Centralised Method
 
@@ -374,7 +374,7 @@ Note: URLs are different for testnet and mainnet. Please refer to [docs](https:/
 
 ## Validating
 
-> **Note:** Modify the env file by commenting or uncommenting the subtensor-related configurations to connect to either the testnet or mainnet, specifically the `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
+> **Note:** To connect to testnet, uncomment the testnet related configuration, specifically `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
 
 Copy the validator .env file and set up the .env file
 
