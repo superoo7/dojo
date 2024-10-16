@@ -100,13 +100,13 @@ dojo-cli:
 # ---------------------------------------------------------------------------- #
 
 miner-decentralised-logs:
-	docker compose -f docker-compose.miner.yaml logs -f miner-mainnet-decentralised
+	docker compose --env-file .env.miner -f docker-compose.miner.yaml logs -f miner-decentralised
 
 miner-centralised-logs:
-	docker compose -f docker-compose.miner.yaml logs -f miner-centralised
+	docker compose --env-file .env.miner -f docker-compose.miner.yaml logs -f miner-centralised
 
 validator-logs:
-	docker compose -f docker-compose.validator.yaml logs -f validator
+	docker compose --env-file .env.validator -f docker-compose.validator.yaml logs -f validator
 
 # miner-decentralised-logs:
 # 	@if [ "$(network)" = "mainnet" ]; then \
