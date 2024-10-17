@@ -308,7 +308,8 @@ class Validator(BaseNeuron):
             )
 
             # Apply obfuscation to each completion's files
-            await Validator._obfuscate_completion_files(shuffled_completions)
+            # TODO re-nable obfuscation
+            # await Validator._obfuscate_completion_files(shuffled_completions)
 
             criteria_types = []
             # ensure criteria options same order as completion_responses
@@ -361,7 +362,15 @@ class Validator(BaseNeuron):
                 for file in completion.completion.files:
                     if file.filename.lower().endswith(".html"):
                         try:
+                            original_size = len(file.content)
+                            logger.debug(
+                                f"Original size of {file.filename}: {original_size} bytes"
+                            )
                             file.content = await obfuscate_html_and_js(file.content)
+                            obfuscated_size = len(file.content)
+                            logger.debug(
+                                f"Obfuscated size of {file.filename}: {obfuscated_size} bytes"
+                            )
                         except Exception as e:
                             logger.error(f"Error obfuscating {file.filename}: {e}")
 
@@ -588,11 +597,6 @@ class Validator(BaseNeuron):
         logger.debug(f"Raw scores: {self.scores}")
         logger.debug(f"normalized weights: {normalized_weights}")
         logger.debug(f"normalized weights uids: {self.metagraph.uids}")
-
-        if torch.count_nonzero(normalized_weights).item() == 0:
-            logger.warning("All weights are zero, skipping...")
-            return
-
         logger.info("Attempting to set weights")
 
         safe_uids = self.metagraph.uids
