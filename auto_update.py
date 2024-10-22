@@ -4,6 +4,7 @@ import sys
 import time
 
 from bittensor.btlogging import logging as logger
+from dotenv import find_dotenv, load_dotenv
 
 from dojo import __version__
 
@@ -281,6 +282,17 @@ if __name__ == "__main__":
         choices=["miner-decentralised", "miner-centralised", "validator"],
         help="Specify the service to run (miner or validator).",
     )
+
+    logger.info(f"Starting the auto-update script. {sys.argv[1]}")
+
+    env_file = ".env.miner" if "miner" in sys.argv[1] else ".env.validator"
+
+    if not env_file:
+        logger.error("No env file specified.")
+        sys.exit(1)
+
+    load_dotenv(find_dotenv(env_file), override=True)  # override=True works !!
+
     args = parser.parse_args()
 
     logger.info(f"Starting the {args.service} process.")

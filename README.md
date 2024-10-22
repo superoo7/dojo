@@ -412,15 +412,18 @@ Start the validator
 make validator
 ```
 
-(**WIP**) To start with autoupdate for validators (**optional**)
+To start with autoupdate for validators (**optional**)
 
 ```bash
-# for testnet
 pm2 start auto_update.py --name auto-update-validator -- validator
 
 or
 
-pm2 start auto_update.py --name auto-update-miner -- miner
+pm2 start auto_update.py --name auto-update-miner -- miner-decentralised
+
+or
+
+pm2 start auto_update.py --name auto-update-miner -- miner-centralised
 ```
 
 # Dojo CLI

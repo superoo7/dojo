@@ -210,4 +210,3 @@ class Miner(BaseMinerNeuron):
         while not cls._should_exit:
             logger.info(f"Miner running... {time.time()}")
             await asyncio.sleep(MINER_STATUS)
-            await asyncio.sleep(MINER_STATUS)
