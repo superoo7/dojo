@@ -523,17 +523,17 @@ class ORM:
         return torch.tensor(json.loads(score_record.score))
 
     @staticmethod
-    async def get_completion_scores_by_dojo_task_id(
+    async def get_completion_scores_and_models_by_dojo_task_id(
         dojo_task_id: str,
-    ) -> List[float | None]:
+    ) -> dict[str, float | None]:
         """
-        Fetch the scores from Completion_Response_Model for a given Dojo task ID.
+        Fetch the scores and model IDs from Completion_Response_Model for a given Dojo task ID.
 
         Args:
             dojo_task_id (str): The Dojo task ID to search for.
 
         Returns:
-            List[Optional[float]]: A list of scores (which may be None) for the given Dojo task ID.
+            dict[str, Optional[float]]: A dictionary mapping model ID to score (which may be None) for the given Dojo task ID.
         """
         try:
             # First, find the Feedback_Request_Model with the given dojo_task_id
@@ -546,16 +546,21 @@ class ORM:
                 logger.warning(
                     f"No Feedback_Request_Model found for dojo_task_id: {dojo_task_id}"
                 )
-                return []
+                return {}
 
             # Extract scores from the completions
-            scores = [completion.score for completion in feedback_request.completions]
+            scores_and_models = {
+                completion.model: completion.score
+                for completion in feedback_request.completions
+            }
 
-            logger.debug(f"Found {len(scores)} scores for dojo_task_id: {dojo_task_id}")
-            return scores
+            logger.debug(
+                f"Found {len(scores_and_models)} scores and models for dojo_task_id: {dojo_task_id}"
+            )
+            return scores_and_models
 
         except Exception as e:
             logger.error(
-                f"Error fetching completion scores for dojo_task_id {dojo_task_id}: {e}"
+                f"Error fetching completion scores and models for dojo_task_id {dojo_task_id}: {e}"
             )
-            return []
+            return {}
