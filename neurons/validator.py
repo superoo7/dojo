@@ -833,12 +833,6 @@ class Validator:
         except Exception as e:
             logger.error(f"Failed to save validator state: {e}")
 
-    def save_state(self):
-        try:
-            self.loop.run_until_complete(self._save_state())
-        except Exception as e:
-            logger.error(f"Failed to save validator state: {e}")
-
     async def _load_state(self):
         try:
             await connect_db()
