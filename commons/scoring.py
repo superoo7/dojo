@@ -332,7 +332,7 @@ class Scoring:
         # use minmax scale to ensure ground truth is in the range [0, 1]
         ground_truth_arr = minmax_scale(
             np.array([rank for _, rank in cid_with_rank_sorted])
-        )
+        ).numpy()
         logger.debug(f"scoring: ground truth\n{ground_truth_arr}")
 
         logger.info(f"scoring: Miner outputs\n{miner_outputs}")
@@ -458,6 +458,9 @@ class Scoring:
         """Combines both consensus score and difference with ground truths scoring to output a final score per miner"""
         criteria_to_miner_scores = defaultdict(Score)
         hotkey_to_final_score: dict[str, float] = defaultdict(float)
+        logger.trace(
+            f"Calculating scores for miner responses ... {len(miner_responses)}"
+        )
         for criteria in criteria_types:
             # valid responses
             valid_miner_responses = []
@@ -484,6 +487,8 @@ class Scoring:
             # #         criteria, request, valid_miner_responses
             # #     )
 
+            logger.debug(f"Got {len(valid_miner_responses)} valid responses")
+
             if not isinstance(criteria, MultiScoreCriteria):
                 raise NotImplementedError("Only multi-score criteria is supported atm")
             gt_score = Scoring.ground_truth_score_V1(
@@ -495,7 +500,12 @@ class Scoring:
             #     criteria, request, valid_miner_responses
             # )
 
-            consensus_score = np.zeros(len(valid_miner_responses))
+            # dummy for now
+            consensus_score = ConsensusScore(
+                score=torch.zeros(len(valid_miner_responses)),
+                mse_by_miner=torch.zeros(len(valid_miner_responses)),
+                icc_by_miner=torch.zeros(len(valid_miner_responses)),
+            )
 
             for i, r in enumerate(valid_miner_responses):
                 # consensus = 0.2 * consensus_score.score[i]

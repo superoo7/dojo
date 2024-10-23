@@ -202,7 +202,7 @@ class Validator(BaseNeuron):
                             mean_weighted_gt_scores = (
                                 torch.stack(
                                     [
-                                        miner_scores.ground_truth.score
+                                        miner_scores.ground_truth
                                         for miner_scores in criteria_to_miner_score.values()
                                     ]
                                 )
