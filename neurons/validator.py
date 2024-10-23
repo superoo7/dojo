@@ -214,16 +214,30 @@ class Validator(BaseNeuron):
                                 f"📝 Mean miner scores across different criteria: consensus shape:{mean_weighted_consensus_scores}, gt shape:{mean_weighted_gt_scores}"
                             )
 
+                            ground_truth_scores = [
+                                miner_scores.ground_truth.score
+                                for miner_scores in criteria_to_miner_score.values()
+                            ]
+
                             score_data = {}
                             # update the scores based on the rewards
                             score_data["scores_by_hotkey"] = hotkey_to_score
                             score_data["mean"] = {
                                 "consensus": mean_weighted_consensus_scores,
                                 "ground_truth": mean_weighted_gt_scores,
+                                "raw_ground_truth_scores": ground_truth_scores,
                             }
+
+                            dojo_task_ids = [
+                                miner_response.dojo_task_id
+                                for miner_response in task.miner_responses
+                                if miner_response.dojo_task_id is not None
+                            ]
 
                             wandb_data = jsonable_encoder(
                                 {
+                                    "request_id": task.request.request_id,
+                                    "dojo_task_ids": dojo_task_ids,
                                     "task": task.request.task_type,
                                     "criteria": task.request.criteria_types,
                                     "prompt": task.request.prompt,
