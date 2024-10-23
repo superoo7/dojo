@@ -445,15 +445,23 @@ def _map_ground_truth_rank_to_score(
         min_score: int | float,
         max_score: int | float,
     ):
-        return rank / (max_rank - min_rank) * (max_score - min_score) + min_score
+        # invert the rank because rank with lower number
+        # i.e. rank 1 is best, rank 3 is worst (0-indexed)
+        inverted_rank = max_rank - rank + min_rank
+        return (
+            inverted_rank / (max_rank - min_rank) * (max_score - min_score) + min_score
+        )
 
     completion_id_score_tuples: list[tuple[str, float]] = []
+
+    min_rank = min(list(unique_ranks))
+    max_rank = max(list(unique_ranks))
 
     for completion_id, rank in list(ground_truth.items()):
         score = convert_rank_to_score(
             rank,
-            min(list(unique_ranks)),
-            max(list(unique_ranks)),
+            min_rank,
+            max_rank,
             criteria.min,
             criteria.max,
         )
