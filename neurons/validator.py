@@ -228,16 +228,22 @@ class Validator(BaseNeuron):
                                 "raw_ground_truth_scores": ground_truth_scores,
                             }
 
-                            dojo_task_ids = [
-                                miner_response.dojo_task_id
-                                for miner_response in task.miner_responses
-                                if miner_response.dojo_task_id is not None
-                            ]
+                            dojo_task_id_to_scores = {}
+                            for miner_response in task.miner_responses:
+                                if miner_response.dojo_task_id is not None:
+                                    scores = (
+                                        await ORM.get_completion_scores_by_dojo_task_id(
+                                            miner_response.dojo_task_id
+                                        )
+                                    )
+                                    dojo_task_id_to_scores[
+                                        miner_response.dojo_task_id
+                                    ] = scores
 
                             wandb_data = jsonable_encoder(
                                 {
                                     "request_id": task.request.request_id,
-                                    "dojo_task_ids": dojo_task_ids,
+                                    "dojo_task_id_to_scores": dojo_task_id_to_scores,
                                     "task": task.request.task_type,
                                     "criteria": task.request.criteria_types,
                                     "prompt": task.request.prompt,
