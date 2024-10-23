@@ -75,6 +75,8 @@ def _get_ground_truth_by_criteria(criteria, model_with_score_sorted):
 
 
 def minmax_scale(tensor: torch.Tensor | np.ndarray) -> torch.Tensor:
+    if isinstance(tensor, np.ndarray):
+        tensor = torch.from_numpy(tensor)
     min = tensor.min()
     max = tensor.max()
     return (tensor - min) / (max - min)
@@ -477,14 +479,15 @@ class Scoring:
 
                 continue
 
-            if isinstance(criteria, RankingCriteria):
-                gt_score = Scoring.spm_ground_truth(
-                    criteria, request, valid_miner_responses
-                )
-            else:
-                gt_score = Scoring.ground_truth_score_V1(
-                    criteria, request, valid_miner_responses
-                )
+            # if isinstance(criteria, RankingCriteria):
+            #     gt_score = Scoring.spm_ground_truth(
+            #         criteria, request, valid_miner_responses
+            #     )
+            if not isinstance(criteria, MultiScoreCriteria):
+                raise NotImplementedError("Only multi-score criteria is supported atm")
+            gt_score = Scoring.ground_truth_score_V1(
+                criteria, request.ground_truth, valid_miner_responses
+            )
 
             # TODO @dev add heuristics once scoring is stable
             # consensus_score = Scoring.consensus_score(
