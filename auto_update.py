@@ -2,9 +2,11 @@ import argparse
 import subprocess
 import sys
 import time
+from datetime import datetime
 
 from bittensor.btlogging import logging as logger
 
+from commons.utils import datetime_to_iso8601_str
 from dojo import __version__
 from dojo.utils.config import source_dotenv
 
@@ -172,13 +174,15 @@ def check_for_image_updates(images):
     return has_update
 
 
-def stash_changes():
+def stash_changes(service_name: str):
     result = subprocess.run(
         ["git", "status", "--porcelain"], capture_output=True, text=True
     )
     if result.stdout.strip():
         logger.info("Stashing any local changes.")
-        subprocess.run(["git", "stash"], check=True)
+        current_time_utc = datetime_to_iso8601_str(datetime.now())
+        stash_entry_message = f"dojo auto-updater: {service_name} {current_time_utc}"
+        subprocess.run(["git", "stash", "push", "-m", stash_entry_message], check=True)
     else:
         logger.info("No changes to stash.")
 
@@ -215,9 +219,9 @@ def get_current_version():
     return version
 
 
-def update_repo():
+def update_repo(service_name: str):
     logger.info("Updating the repository..")
-    stash_changes()
+    stash_changes(service_name)
     pull_latest_changes()
     pop_stash()
 
@@ -263,7 +267,7 @@ def main(service_name):
                     logger.info(
                         f"Repository has changed. {RED}{current_dojo_version}{RESET} -> {GREEN}{new_dojo_version}{RESET}"
                     )
-                    update_repo()
+                    update_repo(service_name)
 
                 # Restart Docker if there are any updates
                 restart_docker(service_name)
