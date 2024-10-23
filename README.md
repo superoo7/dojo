@@ -442,10 +442,10 @@ conda activate dojo_py311
 pm2 start auto_update.py --name auto-update-validator --interpreter $(which python3) -- --env_file .env.validator --service validator
 
 # miner-centralised
-pm2 start auto_update.py --name auto-update-miner --interpreter $(which python3) -- --env_file .env.miner --service miner-centralised
+pm2 start auto_update.py --name auto-update-miner-centralised --interpreter $(which python3) -- --env_file .env.miner --service miner-centralised
 
 # miner-decentralised
-pm2 start auto_update.py --name auto-update-miner --interpreter $(which python3) -- --env_file .env.miner --service miner-decentralised
+pm2 start auto_update.py --name auto-update-miner-decentralised --interpreter $(which python3) -- --env_file .env.miner --service miner-decentralised
 ```
 
 # Dojo CLI
