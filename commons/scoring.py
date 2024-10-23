@@ -470,19 +470,20 @@ class Scoring:
                     continue
                 valid_miner_responses.append(response)
 
-            if len(valid_miner_responses) < 2:
-                logger.warning(
-                    f"Skipping scoring for request id: {request.request_id} as not enough valid responses"
-                )
-                for r in valid_miner_responses:
-                    hotkey_to_final_score[r.axon.hotkey] = 0.0
-
-                continue
-
-            # if isinstance(criteria, RankingCriteria):
-            #     gt_score = Scoring.spm_ground_truth(
-            #         criteria, request, valid_miner_responses
+            # if len(valid_miner_responses) < 2:
+            #     logger.warning(
+            #         f"Skipping scoring for request id: {request.request_id} as not enough valid responses"
             #     )
+            #     for r in valid_miner_responses:
+            #         hotkey_to_final_score[r.axon.hotkey] = 0.0
+
+            #     continue
+
+            # # if isinstance(criteria, RankingCriteria):
+            # #     gt_score = Scoring.spm_ground_truth(
+            # #         criteria, request, valid_miner_responses
+            # #     )
+
             if not isinstance(criteria, MultiScoreCriteria):
                 raise NotImplementedError("Only multi-score criteria is supported atm")
             gt_score = Scoring.ground_truth_score_V1(
