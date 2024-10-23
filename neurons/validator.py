@@ -234,31 +234,29 @@ class Validator:
                                 f"📝 Mean miner scores across different criteria: consensus shape:{mean_weighted_consensus_scores}, gt shape:{mean_weighted_gt_scores}"
                             )
 
-                            ground_truth_scores = [
-                                miner_scores.ground_truth.score
-                                for miner_scores in criteria_to_miner_score.values()
-                            ]
-
                             score_data = {}
                             # update the scores based on the rewards
                             score_data["scores_by_hotkey"] = hotkey_to_score
                             score_data["mean"] = {
                                 "consensus": mean_weighted_consensus_scores,
                                 "ground_truth": mean_weighted_gt_scores,
-                                "raw_ground_truth_scores": ground_truth_scores,
                             }
 
-                            dojo_task_scores = {}
+                            dojo_task_to_model_scores = []
                             for miner_response in task.miner_responses:
                                 if miner_response.dojo_task_id is not None:
                                     model_to_score_map = await ORM.get_completion_scores_and_models_by_dojo_task_id(
                                         miner_response.dojo_task_id
                                     )
-                                    dojo_task_scores[miner_response.dojo_task_id] = (
-                                        model_to_score_map
+                                    dojo_task_to_model_scores.append(
+                                        {
+                                            miner_response.dojo_task_id: model_to_score_map
+                                        }
                                     )
 
-                            score_data["dojo_task_scores"] = dojo_task_scores
+                            score_data["dojo_task_to_model_scores"] = (
+                                dojo_task_to_model_scores
+                            )
 
                             wandb_data = jsonable_encoder(
                                 {
