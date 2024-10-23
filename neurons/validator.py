@@ -2,7 +2,6 @@ import asyncio
 import copy
 import gc
 import random
-import threading
 import time
 import traceback
 from collections import defaultdict
@@ -63,7 +62,6 @@ from dojo.utils.uids import MinerUidSelector, extract_miner_uids, is_miner
 class Validator:
     _should_exit: bool = False
     _alock = asyncio.Lock()
-    _tlock = threading.Lock()
     _threshold = 0.1
     _active_miner_uids: set[int] = set()
 
