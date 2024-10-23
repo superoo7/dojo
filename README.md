@@ -412,18 +412,18 @@ Start the validator
 make validator
 ```
 
-To start with autoupdate for validators (**optional**)
+To start with autoupdate for validators, or miners (**strongly recommended**)
 
 ```bash
-pm2 start auto_update.py --name auto-update-validator -- validator
+pm2 start auto_update.py --name auto-update-validator -- --env_file .env.validator --service  validator
 
 or
 
-pm2 start auto_update.py --name auto-update-miner -- miner-decentralised
+pm2 start auto_update.py --name auto-update-miner -- --env_file .env.miner --service miner-decentralised
 
 or
 
-pm2 start auto_update.py --name auto-update-miner -- miner-centralised
+pm2 start auto_update.py --name auto-update-miner -- --env_file .env.miner --service miner-centralised
 ```
 
 # Dojo CLI
