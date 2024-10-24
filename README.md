@@ -48,6 +48,7 @@
     - [Option 2: Decentralised Method](#option-2-decentralised-method)
     - [Setup Subscription Key for Labellers on UI to connect to Dojo Subnet for scoring](#setup-subscription-key-for-labellers-on-ui-to-connect-to-dojo-subnet-for-scoring)
   - [Validating](#validating)
+- [Auto-updater](#auto-updater)
 - [Dojo CLI](#dojo-cli)
 - [For Dojo developerss](#for-dojo-developerss)
 - [License](#license)
@@ -130,6 +131,7 @@ By creating an open platform for gathering human-generated datasets, Tensorplex 
 >
 > - [fnm](https://github.com/Schniz/fnm) for managing Node.js & npm versions (required for PM2)
 > - [Docker](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/)
+> - [Conda](https://docs.anaconda.com/miniconda/#quick-command-line-install) for using the auto-updater for validators or miners, this is recommended but you may use any python environment provider of choice.
 
 > Please ensure these prerequisites are installed on your system before proceeding with the installation steps, these are needed by both **validators and miners**.
 
@@ -142,6 +144,16 @@ cd ~/opt
 # Clone the project
 git clone https://github.com/tensorplex-labs/dojo.git
 cd dojo/
+
+# setup conda env using miniconda, and follow the setup
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+# verify conda installation
+conda info
+# create python env and install dependencies
+conda create -n dojo_py311 python=3.11
+conda activate dojo_py311
+make install
 ```
 
 2. Install PM2, one way is through fnm
@@ -232,6 +244,8 @@ btcli s register --wallet.name coldkey --wallet.hotkey hotkey --netuid 98 --subt
 
 ## Mining
 
+> **Note:** To connect to testnet, uncomment the testnet related configuration, specifically `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
+
 ### Option 1: Centralised Method
 
 1. Create .env file with the following values first.
@@ -276,11 +290,10 @@ DOJO_API_KEY=# api key from step 2.
 4. Start the miner by running the following commands:
 
 ```bash
-# for mainnet
-make miner-centralised network=mainnet
-# for testnet
-make miner-centralised network=testnet
+make miner-centralised
 ```
+
+To start with autoupdate for miners (**strongly recommended**), see the [Auto-updater](#auto-updater) section.
 
 ### Option 2: Decentralised Method
 
@@ -342,17 +355,10 @@ DOJO_API_KEY=# api key from earlier
 5. Now, run the full miner service.
 
 ```bash
-# for mainnet
-make miner-decentralised network=mainnet
-# for testnet
-make miner-decentralised network=testnet
-
-# read miner logs using the following:
-# for mainnet
-make miner-decentralised-logs network=mainnet
-# for testnet
-make miner-decentralised-logs network=testnet
+make miner-decentralised
 ```
+
+To start with autoupdate for miners (**strongly recommended**), see the [Auto-updater](#auto-updater) section.
 
 > [!IMPORTANT]
 >
@@ -379,6 +385,8 @@ Note: URLs are different for testnet and mainnet. Please refer to [docs](https:/
 
 ## Validating
 
+> **Note:** To connect to testnet, uncomment the testnet related configuration, specifically `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
+
 Copy the validator .env file and set up the .env file
 
 ```bash
@@ -396,6 +404,11 @@ WANDB_API_KEY="<wandb_key>"
 # for dojo-synthetic-api
 OPENROUTER_API_KEY="sk-or-v1-<KEY>"
 
+# for langfuse, the free tier is more than enough
+LANGFUSE_SECRET_KEY=# head to langfuse.com
+LANGFUSE_PUBLIC_KEY=# head to langfuse.com
+LANGFUSE_HOST="https://us.cloud.langfuse.com" # 🇺🇸 US region
+
 # Other LLM API providers, Optional or if you've chosen it over Openrouter
 TOGETHER_API_KEY=
 OPENAI_API_KEY=
@@ -408,25 +421,38 @@ DB_PASSWORD=#generate and set a secure password
 DATABASE_URL=postgresql://${DB_USERNAME}:${DB_PASSWORD}@${DB_HOST}/${DB_NAME}
 ```
 
+> **Note:** To ensure your validator runs smoothly, enable the auto top-up feature for Openrouter, this ensures that your validator will not fail to call synthetic API during task generation. The estimate cost of generating a task is approximately $0.20 USD.
+
 Start the validator
 
 ```bash
-# start the validator
-# for mainnet
-make validator network=mainnet
-# for testnet
-make validator network=testnet
+# To start the validator:
+make validator
 ```
 
-(**WIP**) To start with autoupdate for validators (**optional**)
+To start with autoupdate for validators (**strongly recommended**), see the [Auto-updater](#auto-updater) section.
+
+# Auto-updater
+
+> [!WARNING]
+> Please ensure that you stop the pm2 process while you are modifying the validator/miner code to avoid any unexpected code reverts, as the auto updater will stash your changes before pulling from the remote origin.
+
+To start with the auto update for validators or miners, (**strongly recommended**):
+
+Please ensure that you run the command in the python environment, if you haven't configured the python environment yet see Step 1 of [Getting Started](#getting-started).
 
 ```bash
-# for testnet
-pm2 start auto_update.py --name auto-update-validator -- validator
+# activate python env
+conda activate dojo_py311
 
-or
+# validator
+pm2 start auto_update.py --name auto-update-validator --interpreter $(which python3) -- --env_file .env.validator --service validator
 
-pm2 start auto_update.py --name auto-update-miner -- miner
+# miner-centralised
+pm2 start auto_update.py --name auto-update-miner-centralised --interpreter $(which python3) -- --env_file .env.miner --service miner-centralised
+
+# miner-decentralised
+pm2 start auto_update.py --name auto-update-miner-decentralised --interpreter $(which python3) -- --env_file .env.miner --service miner-decentralised
 ```
 
 # Dojo CLI

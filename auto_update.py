@@ -1,10 +1,20 @@
 import argparse
 import subprocess
+import sys
 import time
+from datetime import datetime
 
 from bittensor.btlogging import logging as logger
 
+from commons.utils import datetime_to_iso8601_str
 from dojo import __version__
+from dojo.utils.config import source_dotenv
+
+source_dotenv()
+
+RED = "\033[91m"
+GREEN = "\033[92m"
+RESET = "\033[0m"
 
 CHECK_INTERVAL = 1800  # 30 minutes
 
@@ -14,26 +24,22 @@ BRANCH = "main"
 
 CONFIG = {
     "validator": {
-        "services": [
-            "redis-service",
-            "synthetic-api",
-            "node-subtensor-testnet",
-            "validator-testnet",
-        ],
         "images": ["dojo-synthetic-api"],
+        "docker_compose_down": "docker compose --env-file .env.validator -f docker-compose.validator.yaml down",
+        "docker_compose_up": "docker compose --env-file .env.validator -f docker-compose.validator.yaml up --build -d validator",
     },
-    "miner": {
-        "services": [
-            "redis-service",
-            "postgres-service",
-            "prisma-setup",
-            "node-subtensor-testnet",
-            "sidecar",
-            "worker-api",
-            "worker-ui",
-            "miner-testnet",
-        ],
+    "miner-decentralised": {
         "images": ["dojo-worker-api", "dojo-ui"],
+        "docker_compose_down": "docker compose --env-file .env.miner -f docker-compose.miner.yaml down",
+        "docker_compose_up": "docker compose --env-file .env.miner -f docker-compose.miner.yaml up --build -d miner-decentralised",
+    },
+    "miner-centralised": {
+        "services": [
+            "miner-centralised",
+        ],
+        "images": [],
+        "docker_compose_down": "docker compose --env-file .env.miner -f docker-compose.miner.yaml down",
+        "docker_compose_up": "docker compose --env-file .env.miner -f docker-compose.miner.yaml up --build -d miner-centralised",
     },
 }
 
@@ -141,6 +147,19 @@ def pull_docker_images(list_of_images: list[str]):
 
 
 def check_for_image_updates(images):
+    """
+    Check for updates for a list of Docker images.
+
+    This function iterates over a list of image names, constructs the full image URL,
+    and checks if there is an update available for each image by comparing the local
+    and remote image digests. If any image has an update, pull the images quietly, and returns True.
+
+    Args:
+        images (list[str]): A list of Docker image names to check for updates.
+
+    Returns:
+        bool: True if any of the images have updates available, False otherwise.
+    """
     logger.info(f"Checking images: {images}")
     has_update = False
     for image_name in images:
@@ -155,13 +174,15 @@ def check_for_image_updates(images):
     return has_update
 
 
-def stash_changes():
+def stash_changes(service_name: str):
     result = subprocess.run(
         ["git", "status", "--porcelain"], capture_output=True, text=True
     )
     if result.stdout.strip():
         logger.info("Stashing any local changes.")
-        subprocess.run(["git", "stash"], check=True)
+        current_time_utc = datetime_to_iso8601_str(datetime.now())
+        stash_entry_message = f"dojo auto-updater: {service_name} {current_time_utc}"
+        subprocess.run(["git", "stash", "push", "-m", stash_entry_message], check=True)
     else:
         logger.info("No changes to stash.")
 
@@ -178,23 +199,18 @@ def pop_stash():
 
 
 def restart_docker(service_name):
-    service_data = CONFIG.get(service_name, {})
-    services_to_restart = service_data.get("services", [])
-    main_service = "miner-testnet" if service_name == "miner" else "validator-testnet"
-
-    if not services_to_restart:
-        logger.error(f"No services found for {service_name}.")
-        return
-
     logger.info(f"Restarting Docker services for: {service_name}.")
+    # Get the service data e.g. miner or validator
+    service_data = CONFIG.get(service_name, {})
+
+    docker_compose_down: list[str] = service_data.get("docker_compose_down", "").split()
+    docker_compose_up: list[str] = service_data.get("docker_compose_up", "").split()
 
     # Stop the services in a single command
-    # TODO change based on miner/validator services
-    subprocess.run(["docker", "compose", "stop"] + services_to_restart, check=True)
+    subprocess.run(docker_compose_down, check=True)
 
     # Start the services in a single command
-    # TODO change based on miner/validator services
-    subprocess.run(["docker", "compose", "up", "-d", main_service], check=True)
+    subprocess.run(docker_compose_up, check=True)
 
 
 def get_current_version():
@@ -203,53 +219,77 @@ def get_current_version():
     return version
 
 
-def update_repo():
-    logger.info("Updating the script and its submodules.")
-    stash_changes()
+def update_repo(service_name: str):
+    logger.info("Updating the repository..")
+    stash_changes(service_name)
     pull_latest_changes()
     pop_stash()
 
 
+def get_current_branch():
+    """Get the current Git branch name."""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to get current branch: {e}")
+        sys.exit(1)
+
+
 def main(service_name):
+    # Check if the current branch is 'main'
+    current_branch = get_current_branch()
+    if current_branch != "main":
+        logger.error(f"Current branch is '{current_branch}'. Please switch to 'main'.")
+        sys.exit(1)
+
     logger.info("Starting the main loop.")
     config = CONFIG[service_name]
 
-    # Initial update and start the docker services
-    current_dojo_version = get_current_version()
-    new_dojo_version = get_latest_remote_tag()
-
-    if current_dojo_version != new_dojo_version:
-        update_repo()
-
-    # Pull the latest images
     pull_docker_images(config["images"])
-    restart_docker(service_name)
 
-    # Start the periodic check loop
-    while True:
-        logger.info("Checking for updates...")
-        has_image_updates = check_for_image_updates(config["images"])
+    try:
+        # Start the periodic check loop
+        while True:
+            logger.info("Checking for updates...")
+            current_dojo_version = get_current_version()
+            new_dojo_version = get_latest_remote_tag()
+            has_image_updates = check_for_image_updates(config["images"])
 
-        if current_dojo_version != new_dojo_version:
-            logger.info("Repository has changed. Updating...")
-            update_repo()
-            current_dojo_version = new_dojo_version
+            # Check if either the version has changed or there are image updates
+            if current_dojo_version != new_dojo_version or has_image_updates:
+                if current_dojo_version != new_dojo_version:
+                    logger.info(
+                        f"Repository has changed. {RED}{current_dojo_version}{RESET} -> {GREEN}{new_dojo_version}{RESET}"
+                    )
+                    update_repo(service_name)
 
-        if current_dojo_version != new_dojo_version or has_image_updates:
-            restart_docker(service_name)
+                # Restart Docker if there are any updates
+                restart_docker(service_name)
 
-        logger.info(f"Sleeping for {CHECK_INTERVAL} seconds.")
-        time.sleep(CHECK_INTERVAL)
+            logger.info(f"Sleeping for {CHECK_INTERVAL} seconds.")
+            time.sleep(CHECK_INTERVAL)
+    except KeyboardInterrupt:
+        logger.info("Graceful shutdown initiated.")
+        # Perform any cleanup here if necessary
+        subprocess.run(config["docker_compose_down"].split(), check=True)
+        logger.info("Shutdown complete.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the auto-update script.")
     parser.add_argument(
-        "service",
-        choices=["miner", "validator"],
+        "--service",
+        choices=["miner-decentralised", "miner-centralised", "validator"],
         help="Specify the service to run (miner or validator).",
     )
-    args = parser.parse_args()
+
+    args, _ = parser.parse_known_args()
 
     logger.info(f"Starting the {args.service} process.")
     main(args.service)
