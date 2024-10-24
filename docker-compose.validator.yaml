@@ -7,6 +7,7 @@ volumes:
   redis-validator-volume:
   prisma-pip-cache:
   prisma-binary:
+  prisma-data:
 
 networks:
   dojo-validator:
@@ -98,6 +99,7 @@ services:
     volumes:
       - prisma-pip-cache:/root/.cache/pip
       - prisma-binary:/root/prisma-python
+      - prisma-data:/app/database/prisma
       - ./:/app
     networks:
       - dojo-validator
@@ -115,6 +117,7 @@ services:
       - ./.env.validator:/app/.env
       - $HOME/.bittensor:/root/.bittensor
       - prisma-binary:/root/prisma-python
+      - prisma-data:/app/database/prisma
     command: ["validator"]
     networks:
       - dojo-validator
