@@ -244,9 +244,6 @@ class Validator:
 
                             hotkey_to_dojo_task_scores_and_gt = []
                             for miner_response in task.miner_responses:
-                                logger.debug(
-                                    f"miner_response hotkey: {miner_response.axon.hotkey}"
-                                )
                                 if miner_response.dojo_task_id is not None:
                                     model_to_score_and_gt_map = await ORM.get_scores_and_ground_truth_by_dojo_task_id(
                                         miner_response.dojo_task_id
