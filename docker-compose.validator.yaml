@@ -7,7 +7,6 @@ volumes:
   redis-validator-volume:
   prisma-pip-cache:
   prisma-binary:
-  prisma-data:
 
 networks:
   dojo-validator:
@@ -93,13 +92,14 @@ services:
     build:
       context: .
       dockerfile: ./docker/Dockerfile.validator.prisma
+    command: >
+      sh -c "prisma migrate deploy && prisma generate"
     env_file:
       - .env.validator
     working_dir: /app
     volumes:
       - prisma-pip-cache:/root/.cache/pip
       - prisma-binary:/root/prisma-python
-      - prisma-data:/app/database/prisma
       - ./:/app
     networks:
       - dojo-validator
@@ -117,7 +117,6 @@ services:
       - ./.env.validator:/app/.env
       - $HOME/.bittensor:/root/.bittensor
       - prisma-binary:/root/prisma-python
-      - prisma-data:/app/database/prisma
     command: ["validator"]
     networks:
       - dojo-validator
