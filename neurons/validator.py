@@ -242,20 +242,20 @@ class Validator:
                                 "ground_truth": mean_weighted_gt_scores,
                             }
 
-                            dojo_task_to_model_scores = []
+                            dojo_task_to_scores_and_gt = []
                             for miner_response in task.miner_responses:
                                 if miner_response.dojo_task_id is not None:
-                                    model_to_score_map = await ORM.get_completion_scores_and_models_by_dojo_task_id(
+                                    model_to_score_and_gt_map = await ORM.get_scores_and_ground_truth_by_dojo_task_id(
                                         miner_response.dojo_task_id
                                     )
-                                    dojo_task_to_model_scores.append(
+                                    dojo_task_to_scores_and_gt.append(
                                         {
-                                            miner_response.dojo_task_id: model_to_score_map
+                                            miner_response.dojo_task_id: model_to_score_and_gt_map
                                         }
                                     )
 
-                            score_data["dojo_task_to_model_scores"] = (
-                                dojo_task_to_model_scores
+                            score_data["dojo_task_to_scores_and_gt"] = (
+                                dojo_task_to_scores_and_gt
                             )
 
                             wandb_data = jsonable_encoder(
