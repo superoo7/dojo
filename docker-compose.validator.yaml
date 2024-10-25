@@ -15,7 +15,7 @@ networks:
     name: subtensor
 
 services:
-  redis-validator:
+  redis:
     extends:
       file: docker-compose.shared.yaml
       service: redis
@@ -24,7 +24,7 @@ services:
     networks:
       - dojo-validator
 
-  postgres-validator:
+  postgres:
     extends:
       file: docker-compose.shared.yaml
       service: postgres
@@ -35,6 +35,8 @@ services:
 
   synthetic-api:
     image: ghcr.io/tensorplex-labs/dojo-synthetic-api:main
+    env_file:
+      - .env
     expose:
       - 5003
     networks:
@@ -46,7 +48,7 @@ services:
       retries: 5
       start_period: 30s
     depends_on:
-      redis-service:
+      redis:
         condition: service_healthy
     # allow docker commands inside container
     volumes:
@@ -68,15 +70,17 @@ services:
     networks:
       - dojo-validator
     depends_on:
-      - postgres-vali
+      - postgres
     logging: *default-logging
 
   validator:
     image: ghcr.io/tensorplex-labs/dojo:main
+    env_file:
+      - .env
     working_dir: /app
     volumes:
       - ./:/app
-      - ./.env.validator:/app/.env
+      - ./.env:/app/.env
       - $BITTENSOR_DIR:/root/.bittensor
       - prisma-binary:/root/prisma-python
     command: ["validator"]
@@ -86,7 +90,7 @@ services:
     depends_on:
       synthetic-api:
         condition: service_healthy
-      postgres-vali:
+      postgres:
         condition: service_healthy
       prisma-setup-vali:
         condition: service_completed_successfully

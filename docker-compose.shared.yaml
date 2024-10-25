@@ -20,6 +20,8 @@ services:
 
   redis:
     image: redis/redis-stack-server:7.4.0-v0
+    env_file:
+      - .env
     expose:
       - 6379
     healthcheck:
@@ -31,12 +33,21 @@ services:
 
   postgres:
     image: postgres:15.7
+    env_file:
+      - .env
+    command: >
+      bash -c "
+        export POSTGRES_USER=$${DB_USERNAME}
+        export POSTGRES_PASSWORD=$${DB_PASSWORD}
+        export POSTGRES_DB=$${DB_NAME}
+        docker-entrypoint.sh postgres
+      "
     expose:
       - 5432
     healthcheck:
       test:
         # looks strange, but double $ (i.e. $$) for variable substitution
-        ["CMD-SHELL", "pg_isready -h postgres-vali -U $${DB_USERNAME}"]
+        ["CMD-SHELL", "pg_isready -h postgres -U $${DB_USERNAME}"]
       interval: 5s
       timeout: 5s
       retries: 5

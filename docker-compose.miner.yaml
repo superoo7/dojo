@@ -14,7 +14,7 @@ networks:
     name: subtensor
 
 services:
-  redis-miner:
+  redis:
     extends:
       file: docker-compose.shared.yaml
       service: redis
@@ -23,7 +23,7 @@ services:
     networks:
       - dojo-miner
 
-  postgres-miner:
+  postgres:
     extends:
       file: docker-compose.shared.yaml
       service: postgres
@@ -34,12 +34,14 @@ services:
 
   prisma-setup-miner:
     platform: linux/amd64
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: ./docker/Dockerfile.prisma
     working_dir: /app
     depends_on:
-      - postgres-miner
+      - postgres
     networks:
       - dojo-miner
     logging: *default-logging
@@ -72,8 +74,10 @@ services:
 
   worker-api:
     platform: linux/amd64
+    env_file:
+      - .env
     volumes:
-      - ./.env.miner:/dojo-api/.env
+      - ./.env:/dojo-api/.env
     image: ghcr.io/tensorplex-labs/dojo-worker-api:main
     environment:
       RUNTIME_ENV: local
@@ -88,9 +92,9 @@ services:
     expose:
       - 8080
     depends_on:
-      redis-miner:
+      redis:
         condition: service_healthy
-      postgres-miner:
+      postgres:
         condition: service_healthy
       sidecar:
         condition: service_healthy
@@ -124,7 +128,7 @@ services:
     image: ghcr.io/tensorplex-labs/dojo:main
     volumes:
       - ./:/app
-      - ./.env.miner:/app/.env
+      - ./.env:/app/.env
       - $BITTENSOR_DIR:/root/.bittensor
     command: ["dojo-cli"]
     tty: true
@@ -136,10 +140,12 @@ services:
 
   miner-decentralised:
     image: ghcr.io/tensorplex-labs/dojo:main
+    env_file:
+      - .env
     working_dir: /app
     volumes:
       - ./:/app
-      - ./.env.miner:/app/.env
+      - ./.env:/app/.env
       - $BITTENSOR_DIR:/root/.bittensor
     command: ["miner"]
     depends_on:
@@ -156,6 +162,8 @@ services:
 
   miner-centralised:
     image: ghcr.io/tensorplex-labs/dojo:main
+    env_file:
+      - .env
     working_dir: /app
     volumes:
       - ./:/app
