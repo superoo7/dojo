@@ -28,7 +28,7 @@ services:
       file: docker-compose.shared.yaml
       service: postgres
     volumes:
-      - postgres-miner
+      - postgres-miner:/var/lib/postgresql/data
     networks:
       - dojo-miner
 

@@ -29,7 +29,7 @@ services:
       file: docker-compose.shared.yaml
       service: postgres
     volumes:
-      - postgres-validator
+      - postgres-validator:/var/lib/postgresql/data
     networks:
       - dojo-validator
 
