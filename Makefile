@@ -47,13 +47,13 @@ miner-pull:
 	docker compose --env-file .env.miner -f docker-compose.miner.yaml pull --include-deps
 
 validator-down:
-	docker compose --env-file .env.validator -f docker-compose.validator.yaml down validator
+	docker compose --env-file .env.validator -f docker-compose.validator.yaml down
 
 miner-decentralised-down:
-	docker compose --env-file .env.miner -f docker-compose.miner.yaml down miner-decentralised
+	docker compose --env-file .env.miner -f docker-compose.miner.yaml down
 
 miner-centralised-down:
-	docker compose --env-file .env.miner -f docker-compose.miner.yaml down miner-centralised
+	docker compose --env-file .env.miner -f docker-compose.miner.yaml down
 
 # ---------------------------------------------------------------------------- #
 #                                 CORE SERVICES                                #
