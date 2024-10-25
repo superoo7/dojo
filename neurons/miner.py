@@ -13,7 +13,14 @@ from commons.human_feedback.dojo import DojoAPI
 from commons.utils import get_epoch_time
 from dojo import MINER_STATUS, VALIDATOR_MIN_STAKE
 from dojo.base.miner import BaseMinerNeuron
-from dojo.protocol import FeedbackRequest, Heartbeat, ScoringResult, TaskResultRequest
+from dojo.protocol import (
+    FeedbackRequest,
+    Heartbeat,
+    Result,
+    ScoringResult,
+    TaskResult,
+    TaskResultRequest,
+)
 from dojo.utils.config import get_config
 from dojo.utils.uids import is_miner
 
@@ -127,10 +134,30 @@ class Miner(BaseMinerNeuron):
                 return synapse
 
             # Fetch task results from DojoAPI using task_id
-            task_results = await DojoAPI.get_task_results_by_task_id(synapse.task_id)
-            if not task_results:
+            task_results_raw = await DojoAPI.get_task_results_by_task_id(
+                synapse.task_id
+            )
+            if not task_results_raw:
                 logger.debug(f"No task result found for task id: {synapse.task_id}")
                 return synapse
+
+            task_results = []
+            for result in task_results_raw:
+                task_result = TaskResult(
+                    id=result["id"],
+                    created_at=result["created_at"],
+                    updated_at=result["updated_at"],
+                    status=result["status"],
+                    result_data=[
+                        Result(type=res.get("type"), value=res.get("value"))
+                        for res in result.get("result_data", [])
+                    ],
+                    # this is the task id created on the miner's side, not the
+                    # same as request ID from validators
+                    task_id=result["task_id"],
+                    worker_id=result["worker_id"],
+                )
+                task_results.append(task_result)
 
             synapse.task_results = task_results
             return synapse
