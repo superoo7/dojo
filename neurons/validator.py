@@ -687,7 +687,7 @@ class Validator:
         # dependent on underlying `set_weights` call
         era = 5
         block_time = 12
-        total_max_wait = (max_attempts + 1) + era * block_time
+        total_max_wait = (max_attempts + 1) * era * block_time
         result, message = False, ""
         try:
             result, message = await asyncio.wait_for(

@@ -328,6 +328,7 @@ class ORM:
         num_batches = round(len(miner_responses) / batch_size)
         num_failed_batches = 0
         failed_batch_indices = []
+        batch_id = 0
         for i in range(0, len(miner_responses), batch_size):
             safe_lim = min(len(miner_responses), i + batch_size)
             try:
@@ -396,14 +397,16 @@ class ORM:
                             )
 
                 logger.debug(
-                    f"Updating completion responses: updated batch {i}/{num_batches} "
+                    f"Updating completion responses: updated batch {batch_id+1}/{num_batches} "
                 )
             except Exception as e:
                 logger.error(
-                    f"Updating completion responses: failed for batch {i}/{num_batches}, error: {e}"
+                    f"Updating completion responses: failed for batch {batch_id+1}/{num_batches}, error: {e}"
                 )
                 num_failed_batches += 1
                 failed_batch_indices.extend(range(i, safe_lim))
+            finally:
+                batch_id += 1
 
             await asyncio.sleep(0.1)
 
