@@ -1013,13 +1013,12 @@ class Validator:
 
                     for task in task_batch:
                         request_id = task.request.request_id
-                        miner_responses = task.miner_responses
 
                         obfuscated_to_real_model_id = await ORM.get_real_model_ids(
                             request_id
                         )
 
-                        for miner_response in miner_responses:
+                        for miner_response in task.miner_responses:
                             if (
                                 not miner_response.axon
                                 or not miner_response.axon.hotkey
@@ -1058,25 +1057,25 @@ class Validator:
                                 if model_id in model_id_to_avg_score:
                                     completion.score = model_id_to_avg_score[model_id]
 
-                            # Update miner responses in the database
-                            success = await ORM.update_miner_completions_by_request_id(
-                                request_id, task.miner_responses
-                            )
+                        # Update miner responses in the database
+                        success = await ORM.update_miner_completions_by_request_id(
+                            request_id, task.miner_responses
+                        )
 
-                            if success:
-                                hotkeys = [m.axon.hotkey for m in task.miner_responses]
-                                uids = [
-                                    self.metagraph.hotkeys.index(hotkey)
-                                    for hotkey in hotkeys
-                                    if hotkey in self.metagraph.hotkeys
-                                ]
-                                logger.success(
-                                    f"Successfully updated miner completions for request id: {request_id}, uids: {uids}"
-                                )
-                            else:
-                                logger.error(
-                                    f"Failed to update miner completions for request id: {request_id}, uids: {uids}"
-                                )
+                        if success:
+                            hotkeys = [m.axon.hotkey for m in task.miner_responses]
+                            uids = [
+                                self.metagraph.hotkeys.index(hotkey)
+                                for hotkey in hotkeys
+                                if hotkey in self.metagraph.hotkeys
+                            ]
+                            logger.success(
+                                f"Successfully updated miner completions for request id: {request_id}, uids: {uids}"
+                            )
+                        else:
+                            logger.error(
+                                f"Failed to update miner completions for request id: {request_id}, uids: {uids}"
+                            )
                         await asyncio.sleep(0.2)
             except NoNewUnexpiredTasksYet as e:
                 logger.info(f"No new unexpired tasks yet: {e}")
