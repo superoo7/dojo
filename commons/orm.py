@@ -15,7 +15,7 @@ from commons.exceptions import (
     UnexpiredTasksAlreadyProcessed,
 )
 from commons.utils import datetime_as_utc
-from database.client import db, transaction
+from database.client import prisma, transaction
 from database.mappers import (
     map_child_feedback_request_to_model,
     map_completion_response_to_model,
@@ -335,7 +335,7 @@ class ORM:
 
                 # NOTE: @dev we must nest the transaction so after __aexit__ is
                 # called (when no exceptions occur) then tx.commit() is called
-                async with db.tx(timeout=timedelta(seconds=10)) as tx:
+                async with prisma.tx(timeout=timedelta(seconds=10)) as tx:
                     # find the feedback request ids
                     miner_hotkeys = []
                     for miner_response in batch_responses:
