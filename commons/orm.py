@@ -1,6 +1,7 @@
 import asyncio
 import gc
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator, List
 
@@ -325,7 +326,11 @@ class ORM:
         """Update the miner's provided rank_id / scores etc. for a given request id that it is responding to validator. This exists because over the course of a task, a miner may recruit multiple workers and we
         need to recalculate the average score / rank_id etc. across all workers.
         """
-        num_batches = round(len(miner_responses) / batch_size)
+        if not len(miner_responses):
+            logger.debug("Updating completion responses: nothing to update, skipping.")
+            return True, []
+
+        num_batches = math.ceil(len(miner_responses) / batch_size)
         num_failed_batches = 0
         failed_batch_indices = []
         batch_id = 0

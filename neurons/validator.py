@@ -679,35 +679,22 @@ class Validator:
         logger.debug(f"min_allowed_weights: {min_allowed_weights}")
         logger.debug(f"max_weight_limit: {max_weight_limit}")
 
-        logger.debug("Attempting to set weights")
         logger.debug(f"weights: {safe_normalized_weights}")
         logger.debug(f"uids: {uids}")
 
-        max_attempts = 5
         # dependent on underlying `set_weights` call
-        era = 5
-        block_time = 12
-        total_max_wait = (max_attempts + 1) * era * block_time
-        result, message = False, ""
-        try:
-            result, message = await asyncio.wait_for(
-                self._set_weights(uids, safe_normalized_weights),
-                timeout=total_max_wait,
-            )
-        except asyncio.TimeoutError as e:
-            logger.error(
-                f"Max wait time of {total_max_wait} reached, result: {result}, message: {message}, error: {e}"
-            )
+        result, message = await self.set_weights_in_thread(
+            uids, safe_normalized_weights
+        )
+        if not result:
+            logger.error(f"Failed to set weights: {message}")
             return
+
+        logger.success(f"Set weights successfully: {message}")
         return
 
-    async def _set_weights(
-        self,
-        uids: torch.Tensor,
-        weights: torch.Tensor,
-        max_attempts: int = 5,
-    ):
-        """Wrapper function to set weights with retries
+    async def set_weights_in_thread(self, uids: torch.Tensor, weights: torch.Tensor):
+        """Wrapper function to set weights in a separate thread
 
         Args:
             uids (torch.Tensor): uids to set weights for
@@ -733,20 +720,23 @@ class Validator:
                 - boolean: True if weights were set successfully, False otherwise
                 - string: Message indicating the result of set weights
             """
+            max_attempts = 5
             attempt = 0
             while attempt < max_attempts:
                 try:
-                    logger.trace(f"Set weights attempt {attempt+1}/{max_attempts}")
+                    logger.debug(
+                        f"Set weights attempt {attempt+1}/{max_attempts} at block: {self.block},time: {time.time()}"
+                    )
                     await self._ensure_subtensor_ws_connected()
                     result, message = self.subtensor.set_weights(
                         wallet=self.wallet,
                         netuid=self.config.netuid,  # type: ignore
                         uids=uids.tolist(),
                         weights=weights.tolist(),
-                        wait_for_finalization=False,
+                        wait_for_finalization=True,
                         wait_for_inclusion=False,
                         version_key=self.spec_version,
-                        max_retries=0,
+                        max_retries=1,
                     )
                     if result:
                         logger.success(f"Set weights successfully: {message}")
@@ -772,8 +762,12 @@ class Validator:
 
         logger.trace("Submitting callable func to executor")
 
-        async with self._scores_alock:
-            result, message = await _set_weights()
+        try:
+            result, message = await asyncio.wait_for(_set_weights(), timeout=90)
+        except asyncio.TimeoutError:
+            logger.error("Setting weights timed out after 90 seconds")
+            return False, "Failed to set weights within time limit"
+
         return result, message
 
     async def _wait_set_weights(self):
@@ -786,7 +780,7 @@ class Validator:
             if time.time() - start_time > 2 * 12:
                 logger.warning("Waited for 1 block before setting weights, retrying...")
                 break
-            await asyncio.sleep(3)
+            time.sleep(3)
 
     async def resync_metagraph(self):
         """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
