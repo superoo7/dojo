@@ -691,7 +691,7 @@ class Validator:
         result, message = False, ""
         try:
             result, message = await asyncio.wait_for(
-                self.set_weights_in_thread(uids, safe_normalized_weights),
+                self._set_weights(uids, safe_normalized_weights),
                 timeout=total_max_wait,
             )
         except asyncio.TimeoutError as e:
@@ -701,14 +701,13 @@ class Validator:
             return
         return
 
-    async def set_weights_in_thread(
+    async def _set_weights(
         self,
         uids: torch.Tensor,
         weights: torch.Tensor,
         max_attempts: int = 5,
-        era: int = 5,
     ):
-        """Wrapper function to set weights in a separate thread
+        """Wrapper function to set weights with retries
 
         Args:
             uids (torch.Tensor): uids to set weights for
@@ -738,7 +737,7 @@ class Validator:
             while attempt < max_attempts:
                 try:
                     logger.trace(f"Set weights attempt {attempt+1}/{max_attempts}")
-                    self.loop.run_until_complete(self._ensure_subtensor_ws_connected())
+                    await self._ensure_subtensor_ws_connected()
                     result, message = self.subtensor.set_weights(
                         wallet=self.wallet,
                         netuid=self.config.netuid,  # type: ignore
@@ -767,31 +766,27 @@ class Validator:
                         logger.error("Max attempts reached. Could not set weights.")
                         return False, "Max attempts reached"
 
-                    await self._wait_set_weights(era)
+                    await self._wait_set_weights()
 
             return False, "Max attempts reached"
 
         logger.trace("Submitting callable func to executor")
 
         async with self._scores_alock:
-            result, _ = await _set_weights()
-        return result
+            result, message = await _set_weights()
+        return result, message
 
-    async def _wait_set_weights(self, era: int):
-        """Waits for 5 blocks by calling the block number. Otherwise waits until 60s.
-        This is because era = 5 for the extrinstic during set_weights
-        """
-        logger.trace("Waiting for 5 blocks before setting weights")
+    async def _wait_set_weights(self):
+        """Waits for 1 block by calling the block number. Otherwise waits until 24s"""
+        logger.trace("Waiting for 1 block before setting weights")
         current_block = self.block
         start_time = time.time()
-        while self.block < current_block + era:
-            # long max wait before retrying, up to 5 blocks
-            if time.time() - start_time > era * 12:
-                logger.warning(
-                    "Waited for 5 blocks before setting weights, retrying..."
-                )
+        while self.block == current_block:
+            # long max wait before retrying, up to 2 blocks
+            if time.time() - start_time > 2 * 12:
+                logger.warning("Waited for 1 block before setting weights, retrying...")
                 break
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
     async def resync_metagraph(self):
         """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
