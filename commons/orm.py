@@ -13,7 +13,7 @@ from commons.exceptions import (
     UnexpiredTasksAlreadyProcessed,
 )
 from commons.utils import datetime_as_utc
-from database.client import transaction
+from database.client import db, transaction
 from database.mappers import (
     map_child_feedback_request_to_model,
     map_completion_response_to_model,
@@ -324,7 +324,7 @@ class ORM:
         need to recalculate the average score / rank_id etc. across all workers.
         """
         try:
-            async with transaction() as tx:
+            async with db.tx(timeout=timedelta(seconds=10)) as tx:
                 # find the feedback request ids
                 miner_hotkeys = []
                 for miner_response in miner_responses:
