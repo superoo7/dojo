@@ -29,6 +29,8 @@ from database.prisma.models import (
     Score_Model,
 )
 from database.prisma.types import (
+    Completion_Response_ModelWhereInput,
+    Completion_Response_ModelWhereUniqueInput,
     Feedback_Request_ModelInclude,
     Feedback_Request_ModelWhereInput,
     Ground_Truth_ModelCreateInput,
@@ -332,17 +334,6 @@ class ORM:
                         )
                     miner_hotkeys.append(miner_response.axon.hotkey)
 
-                found_responses = await tx.feedback_request_model.find_many(
-                    where={"request_id": request_id, "hotkey": {"in": miner_hotkeys}}
-                )
-
-                # delete the completions for all of these miners
-                await tx.completion_response_model.delete_many(
-                    where={
-                        "feedback_request_id": {"in": [r.id for r in found_responses]}
-                    }
-                )
-
                 # reconstruct the completion_responses data
                 for miner_response in miner_responses:
                     # find the particular request
@@ -357,13 +348,36 @@ class ORM:
                     if not curr_miner_response:
                         raise ValueError("Miner response not found")
 
-                    # recreate completions
-                    for completion in miner_response.completion_responses:
-                        await tx.completion_response_model.create(
-                            data=map_completion_response_to_model(
-                                completion, curr_miner_response.id
-                            )
+                    # the actual completion_ids NOT the ids of the records in DB
+                    completion_ids = [
+                        c.completion_id for c in miner_response.completion_responses
+                    ]
+
+                    # find completion ids of the miner response
+                    completion_records = await tx.completion_response_model.find_many(
+                        where=Completion_Response_ModelWhereInput(
+                            feedback_request_id=curr_miner_response.id,
+                            completion_id={"in": completion_ids},
                         )
+                    )
+
+                    # actual completion_id TO id of record in DB
+                    completion_id_record_id = {
+                        c.completion_id: c.id for c in completion_records
+                    }
+
+                    # update the completions
+                    for completion in miner_response.completion_responses:
+                        await tx.completion_response_model.update(
+                            data={
+                                "score": completion.score,
+                                "rank_id": completion.rank_id,
+                            },
+                            where=Completion_Response_ModelWhereUniqueInput(
+                                id=completion_id_record_id[completion.completion_id],
+                            ),
+                        )
+
             return True
         except Exception as e:
             logger.error(f"Failed to update completion data for miner responses: {e}")
