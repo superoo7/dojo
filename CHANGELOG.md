@@ -1,3 +1,27 @@
+## [1.3.2](https://github.com/tensorplex-labs/dojo/compare/v1.3.1...v1.3.2) (2024-10-27)
+
+### Bug Fixes
+
+* add try except for calculating scores ([53285ff](https://github.com/tensorplex-labs/dojo/commit/53285ffbd6e67ad716b77dfe18ae196f9599867a))
+* convert to np array and back to torch ([fa7bacc](https://github.com/tensorplex-labs/dojo/commit/fa7baccdb3a44b93d5d398404a5dd3bf2048f100))
+* increase prisma tx timeout, poll tasks every 5 min ([b109592](https://github.com/tensorplex-labs/dojo/commit/b109592d00a2d59580bcf96f17b0f6b52ca16d94))
+* reuse weight_utils function ([2e45a0a](https://github.com/tensorplex-labs/dojo/commit/2e45a0a4c50d69a6c3929c697ed210b0e1f4749a))
+
+## [1.3.1](https://github.com/tensorplex-labs/dojo/compare/v1.3.0...v1.3.1) (2024-10-27)
+
+### Bug Fixes
+
+* increase save_task timeout from 5 to 30s ([5dc8171](https://github.com/tensorplex-labs/dojo/commit/5dc8171865aa8547153e7c009b383ec72366d911))
+* set weights call hanging ([638a3a5](https://github.com/tensorplex-labs/dojo/commit/638a3a54bfd0a4840acec310981478f4b58ecd35))
+* set weights, mini batching update miner responses, update logs ([#48](https://github.com/tensorplex-labs/dojo/issues/48)) ([2e72093](https://github.com/tensorplex-labs/dojo/commit/2e72093465e2ce65cfe554a63c9191bc7c91f680))
+
+## [1.3.0](https://github.com/tensorplex-labs/dojo/compare/v1.2.2...v1.3.0) (2024-10-26)
+
+### Features
+
+* add plotting of weights in terminal for logging ([0376aa5](https://github.com/tensorplex-labs/dojo/commit/0376aa577cbc93bab58f56d969e8fba2ca980b4e))
+* tune cubic function for scores ([0a23e1d](https://github.com/tensorplex-labs/dojo/commit/0a23e1db42da41078626df2cc0352323dd5c0bf8))
+
 ## [1.2.2](https://github.com/tensorplex-labs/dojo/compare/v1.2.1...v1.2.2) (2024-10-25)
 
 ## [1.2.1](https://github.com/tensorplex-labs/dojo/compare/v1.2.0...v1.2.1) (2024-10-25)
