@@ -256,8 +256,7 @@ btcli s register --wallet.name coldkey --wallet.hotkey hotkey --netuid 52 --subt
 btcli s register --wallet.name coldkey --wallet.hotkey hotkey --netuid 98 --subtensor.network test
 ```
 
-## [For Miners](README-miner.md)
-## For Validators
+## Mining
 
 > **Note:** To connect to testnet, uncomment the testnet related configuration, specifically `NETUID`, `SUBTENSOR_CHAIN_ENDPOINT` and `SUBTENSOR_NETWORK`
 
@@ -517,66 +516,4 @@ subscription_key list
 # You can also delete your keys with the following commands.
 api_key delete
 subscription_key delete
-```
-
-# For Dojo developers
-
-You most likely won't be running a dockerized version of the subnet code as you ship. Use the following guide to get up and running
-
-1. Get uv or miniconda or whatever choice of backend. Here, we'll assume you're using uv.
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-2. Make sure you have a python version >=3.10
-
-```bash
-uv python list
-```
-
-3. Create a virtualenv
-
-```bash
-# i'm using 3.11 here, but you may use any >=3.10 version
-uv venv dojo_venv --python=$(uv python find 3.11)
-```
-
-4. Activate virtualenv
-
-```bash
-# follows python-venv syntax
-source dojo_venv/bin/activate
-```
-
-5. Install our dependencies
-
-```bash
-# install dev dependencies
-make install-dev
-# install test dependencies
-make install-test
-```
-
-# License
-
-This repository is licensed under the MIT License.
-
-```text
-# The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the "Software"), to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
-# the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
 ```
