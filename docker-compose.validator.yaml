@@ -3,8 +3,8 @@ x-logging: &default-logging
     max-size: "50m"
 
 volumes:
-  postgres-validator:
-  redis-validator:
+  postgres-validator-volume:
+  redis-validator-volume:
   prisma-pip-cache:
   prisma-binary:
 
@@ -20,7 +20,7 @@ services:
       file: docker-compose.shared.yaml
       service: redis
     volumes:
-      - redis-validator:/data
+      - redis-validator-volume:/data
     networks:
       - dojo-validator
 
@@ -29,7 +29,7 @@ services:
       file: docker-compose.shared.yaml
       service: postgres
     volumes:
-      - postgres-validator:/var/lib/postgresql/data
+      - postgres-validator-volume:/var/lib/postgresql/data
     networks:
       - dojo-validator
 

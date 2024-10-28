@@ -3,8 +3,8 @@ x-logging: &default-logging
     max-size: "50m"
 
 volumes:
-  postgres-miner:
-  redis-miner:
+  postgres-miner-volume:
+  redis-miner-volume:
 
 networks:
   dojo-miner:
@@ -19,7 +19,7 @@ services:
       file: docker-compose.shared.yaml
       service: redis
     volumes:
-      - redis-miner:/data
+      - redis-miner-volume:/data
     networks:
       - dojo-miner
 
@@ -28,7 +28,7 @@ services:
       file: docker-compose.shared.yaml
       service: postgres
     volumes:
-      - postgres-miner:/var/lib/postgresql/data
+      - postgres-miner-volume:/var/lib/postgresql/data
     networks:
       - dojo-miner
 
