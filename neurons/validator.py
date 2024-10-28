@@ -16,7 +16,6 @@ import numpy as np
 import torch
 import wandb
 from bittensor.btlogging import logging as logger
-from bittensor.utils.weight_utils import process_weights_for_netuid
 from fastapi.encoders import jsonable_encoder
 from tenacity import RetryError
 from torch.nn import functional as F
@@ -678,56 +677,30 @@ class Validator:
 
         logger.info("Attempting to set weights")
 
-        # ensure sum = 1
+        # ensure sum = 1, only for the non-zero values
+        # if they're all zeros, they'll remain all zeros.
         normalized_weights = F.normalize(self.scores.cpu(), p=1, dim=0)
-
-        safe_normalized_weights = normalized_weights
         if isinstance(normalized_weights, np.ndarray):
-            safe_normalized_weights = torch.from_numpy(normalized_weights).to("cpu")
+            normalized_weights = torch.from_numpy(normalized_weights).to("cpu")
         elif isinstance(normalized_weights, torch.Tensor):
             pass
 
         # we don't read uids from metagraph because polling metagraph happens
         # faster than calling set_weights and self.scores is already
         # based on uids, adjusted based on metagraph during `resync_metagraph`
-        uids = torch.tensor(list(range(len(safe_normalized_weights))))
+        uids = torch.tensor(list(range(len(normalized_weights))))
 
-        (
-            final_uids,
-            final_weights,
-        ) = process_weights_for_netuid(  # type: ignore
-            uids=uids.numpy(),
-            weights=safe_normalized_weights.numpy(),
-            netuid=self.config.netuid,  # type: ignore
-            subtensor=self.subtensor,
-            metagraph=self.metagraph,
-        )
-
-        if isinstance(final_weights, np.ndarray):
-            final_weights = torch.from_numpy(final_weights).to("cpu")
-        if isinstance(final_uids, np.ndarray):
-            final_uids = torch.from_numpy(final_uids).to("cpu")
-
-        logger.debug(f"weights:\n{safe_normalized_weights}")
+        logger.debug(f"weights:\n{normalized_weights}")
         logger.debug(f"uids:\n{uids}")
 
         _terminal_plot(
             f"pre-processed weights, block: {self.block}",
-            safe_normalized_weights.numpy(),
+            normalized_weights.numpy(),
         )
 
-        logger.debug(f"final weights:\n{final_weights}")
-        logger.debug(f"final uids:\n{final_uids}")
-
-        _terminal_plot(
-            f"final weights, block: {self.block}",
-            final_weights.numpy(),
-        )
-
-        # dependent on underlying `set_weights` call
         try:
             result, message = await asyncio.wait_for(
-                self._set_weights(final_uids, final_weights), timeout=90
+                self._set_weights(uids, normalized_weights), timeout=90
             )
             if not result:
                 logger.error(f"Failed to set weights: {message}")
@@ -768,6 +741,22 @@ class Validator:
                 #     )
                 # except asyncio.TimeoutError:
                 #     pass
+
+                # check if all zeros, if so we'll bypass `set_weights` that always scales them to ones
+                # this isn't fair to miners who are actually completing tasks
+                if torch.all(weights == 0):
+                    result, message = self.subtensor._do_set_weights(
+                        wallet=self.wallet,
+                        netuid=self.config.netuid,  # type: ignore
+                        uids=uids.tolist(),
+                        vals=weights.tolist(),
+                        version_key=self.spec_version,
+                        wait_for_finalization=True,
+                        wait_for_inclusion=False,
+                    )
+                    if result:
+                        logger.success(f"Set weights successfully: {message}")
+                        return result, message
 
                 result, message = self.subtensor.set_weights(
                     wallet=self.wallet,
