@@ -321,7 +321,9 @@ class ORM:
 
     @staticmethod
     async def update_miner_completions_by_request_id(
-        request_id: str, miner_responses: List[FeedbackRequest], batch_size: int = 10
+        request_ids: List[str],
+        miner_responses: List[FeedbackRequest],
+        batch_size: int = 50,
     ) -> tuple[bool, list[int]]:
         """Update the miner's provided rank_id / scores etc. for a given request id that it is responding to validator. This exists because over the course of a task, a miner may recruit multiple workers and we
         need to recalculate the average score / rank_id etc. across all workers.
@@ -333,46 +335,41 @@ class ORM:
         num_batches = math.ceil(len(miner_responses) / batch_size)
         num_failed_batches = 0
         failed_batch_indices = []
-        batch_id = 0
-        for i in range(0, len(miner_responses), batch_size):
-            safe_lim = min(len(miner_responses), i + batch_size)
-            try:
-                batch_responses = miner_responses[i:safe_lim]
 
-                # NOTE: @dev we must nest the transaction so after __aexit__ is
-                # called (when no exceptions occur) then tx.commit() is called
+        for batch_id in range(num_batches):
+            start_idx = batch_id * batch_size
+            end_idx = min((batch_id + 1) * batch_size, len(miner_responses))
+            batch_responses = miner_responses[start_idx:end_idx]
+
+            try:
                 async with prisma.tx(timeout=timedelta(seconds=30)) as tx:
-                    # find the feedback request ids
-                    miner_hotkeys = []
                     for miner_response in batch_responses:
                         if not miner_response.axon or not miner_response.axon.hotkey:
                             raise InvalidMinerResponse(
                                 f"Miner response {miner_response} must have a hotkey"
                             )
-                        miner_hotkeys.append(miner_response.axon.hotkey)
 
-                    # update the completion_responses data
-                    for miner_response in batch_responses:
-                        # find the particular request
-                        hotkey = miner_response.axon.hotkey  # type: ignore
+                        hotkey = miner_response.axon.hotkey
+                        request_id = miner_response.request_id
+
                         curr_miner_response = (
                             await tx.feedback_request_model.find_first(
                                 where=Feedback_Request_ModelWhereInput(
                                     request_id=request_id,
-                                    hotkey=hotkey,  # type: ignore
+                                    hotkey=hotkey,
                                 )
                             )
                         )
 
                         if not curr_miner_response:
-                            raise ValueError("Miner response not found")
+                            raise ValueError(
+                                f"Miner response not found for request_id: {request_id}, hotkey: {hotkey}"
+                            )
 
-                        # the actual completion_ids NOT the ids of the records in DB
                         completion_ids = [
                             c.completion_id for c in miner_response.completion_responses
                         ]
 
-                        # find completion ids of the miner response
                         completion_records = (
                             await tx.completion_response_model.find_many(
                                 where=Completion_Response_ModelWhereInput(
@@ -382,12 +379,10 @@ class ORM:
                             )
                         )
 
-                        # actual completion_id TO id of record in DB
                         completion_id_record_id = {
                             c.completion_id: c.id for c in completion_records
                         }
 
-                        # update the completions
                         for completion in miner_response.completion_responses:
                             await tx.completion_response_model.update(
                                 data={
@@ -402,16 +397,14 @@ class ORM:
                             )
 
                 logger.debug(
-                    f"Updating completion responses: updated batch {batch_id+1}/{num_batches} "
+                    f"Updating completion responses: updated batch {batch_id+1}/{num_batches}"
                 )
             except Exception as e:
                 logger.error(
                     f"Updating completion responses: failed for batch {batch_id+1}/{num_batches}, error: {e}"
                 )
                 num_failed_batches += 1
-                failed_batch_indices.extend(range(i, safe_lim))
-            finally:
-                batch_id += 1
+                failed_batch_indices.extend(range(start_idx, end_idx))
 
             await asyncio.sleep(0.1)
 
