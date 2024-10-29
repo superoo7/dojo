@@ -551,6 +551,23 @@ class Scoring:
                     continue
                 valid_miner_responses.append(response)
 
+            if not len(valid_miner_responses):
+                logger.info(f"📝 No valid responses for {request.request_id}")
+
+                for r in miner_responses:
+                    hotkey_to_final_score[r.axon.hotkey] = 0.0  # type: ignore
+                consensus_score = ConsensusScore(
+                    score=torch.zeros(len(miner_responses)),
+                    mse_by_miner=torch.zeros(len(miner_responses)),
+                    icc_by_miner=torch.zeros(len(miner_responses)),
+                )
+
+                criteria_to_miner_scores[criteria.type] = Score(
+                    ground_truth=torch.zeros(len(miner_responses)),
+                    consensus=consensus_score,
+                )
+                return criteria_to_miner_scores, hotkey_to_final_score
+
             # if len(valid_miner_responses) < 2:
             #     logger.warning(
             #         f"Skipping scoring for request id: {request.request_id} as not enough valid responses"
@@ -565,7 +582,7 @@ class Scoring:
             # #         criteria, request, valid_miner_responses
             # #     )
 
-            logger.error(f"📝 Filtered {len(valid_miner_responses)} valid responses")
+            logger.info(f"📝 Filtered {len(valid_miner_responses)} valid responses")
 
             if not isinstance(criteria, MultiScoreCriteria):
                 raise NotImplementedError("Only multi-score criteria is supported atm")
