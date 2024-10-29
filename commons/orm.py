@@ -12,8 +12,7 @@ from commons.exceptions import (
     InvalidCompletion,
     InvalidMinerResponse,
     InvalidTask,
-    NoNewUnexpiredTasksYet,
-    UnexpiredTasksAlreadyProcessed,
+    NoNewExpiredTasksYet,
 )
 from commons.utils import datetime_as_utc
 from database.client import prisma, transaction
@@ -111,8 +110,7 @@ class ORM:
             You must determine the `expire_at` cutoff yourself, otherwise it defaults to current time UTC.
 
         Raises:
-            NoNewUnexpiredTasksYet: If no unexpired tasks are found for processing.
-            UnexpiredTasksAlreadyProcessed: If all unexpired tasks have already been processed.
+            NoNewExpiredTasksYet: If no expired tasks are found for processing.
 
         Yields:
             Iterator[AsyncGenerator[tuple[List[DendriteQueryResponse], bool], None]]:
@@ -130,9 +128,8 @@ class ORM:
             }
         )
 
-        now = datetime_as_utc(datetime.now(timezone.utc))
-        if expire_at:
-            now = expire_at
+        if not expire_at:
+            expire_at = datetime_as_utc(datetime.now(timezone.utc))
 
         vali_where_query_unprocessed = Feedback_Request_ModelWhereInput(
             {
@@ -140,21 +137,9 @@ class ORM:
                 "child_requests": {"some": {}},
                 # only check for expire at since miner may lie
                 "expire_at": {
-                    "gt": now,
+                    "lt": expire_at,
                 },
                 "is_processed": {"equals": False},
-            }
-        )
-
-        vali_where_query_processed = Feedback_Request_ModelWhereInput(
-            {
-                "hotkey": {"in": validator_hotkeys, "mode": "insensitive"},
-                "child_requests": {"some": {}},
-                # only check for expire at since miner may lie
-                "expire_at": {
-                    "gt": now,
-                },
-                "is_processed": {"equals": True},
             }
         )
 
@@ -163,23 +148,12 @@ class ORM:
             where=vali_where_query_unprocessed,
         )
 
-        task_count_processed = await Feedback_Request_Model.prisma().count(
-            where=vali_where_query_processed,
-        )
-
-        logger.debug(
-            f"Count of unprocessed tasks: {task_count_unprocessed}, count of processed tasks: {task_count_processed}"
-        )
+        logger.debug(f"Count of unprocessed tasks: {task_count_unprocessed}")
 
         if not task_count_unprocessed:
-            if task_count_processed:
-                raise UnexpiredTasksAlreadyProcessed(
-                    f"No remaining unexpired tasks found for processing, but don't worry as you have processed {task_count_processed} tasks."
-                )
-            else:
-                raise NoNewUnexpiredTasksYet(
-                    f"No unexpired tasks found for processing, please wait for tasks to pass the task deadline of {TASK_DEADLINE} seconds."
-                )
+            raise NoNewExpiredTasksYet(
+                f"No expired tasks found for processing, please wait for tasks to pass the task deadline of {TASK_DEADLINE} seconds."
+            )
 
         for i in range(0, task_count_unprocessed, batch_size):
             # find all unprocesed validator requests
@@ -193,7 +167,6 @@ class ORM:
 
             # find all miner responses
             unprocessed_validator_request_ids = [r.id for r in validator_requests]
-
             miner_responses = await Feedback_Request_Model.prisma().find_many(
                 include=include_query,
                 where={
@@ -318,12 +291,12 @@ class ORM:
 
     @staticmethod
     async def update_miner_completions_by_request_id(
-        request_ids: List[str],
         miner_responses: List[FeedbackRequest],
-        batch_size: int = 20,
-        max_retries: int = 3,
+        batch_size: int = 10,
+        max_retries: int = 20,
     ) -> tuple[bool, list[int]]:
-        """Update the miner's provided rank_id / scores etc. for a given request id that it is responding to validator. This exists because over the course of a task, a miner may recruit multiple workers and we
+        """
+        Update the miner's provided rank_id / scores etc. for a list of miner responses that it is responding to validator. This exists because over the course of a task, a miner may recruit multiple workers and we
         need to recalculate the average score / rank_id etc. across all workers.
         """
         if not len(miner_responses):

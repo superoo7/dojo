@@ -27,7 +27,7 @@ from commons.dataset.synthetic import SyntheticAPI
 from commons.exceptions import (
     EmptyScores,
     InvalidMinerResponse,
-    NoNewUnexpiredTasksYet,
+    NoNewExpiredTasksYet,
     SetWeightsFailed,
 )
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
@@ -933,23 +933,16 @@ class Validator:
     async def update_score_and_send_feedback(self):
         while True:
             await asyncio.sleep(dojo.VALIDATOR_UPDATE_SCORE)
-
-            # Get latest task completions before scoring
-            await self.monitor_task_completions()
-
-            logger.info("📝 performing scoring ...")
             try:
-                validator_hotkeys = self._get_validator_hotkeys()
-                processed_request_ids = []
+                validator_hotkeys: List[str] = self._get_validator_hotkeys()
+                expire_at = datetime_as_utc(datetime.now(timezone.utc))
+                logger.debug(f"Updating with expire_at: {expire_at}")
 
-                # figure out an expire_at cutoff time to determine those requests ready for scoring
-                try:
-                    expire_at = await ORM.get_last_expire_at_cutoff(validator_hotkeys)
-                except ValueError:
-                    logger.warning(
-                        f"No tasks for scoring yet, please wait for tasks to to pass deadline of {dojo.TASK_DEADLINE} seconds"
-                    )
-                    continue
+                # Get latest task completions before scoring
+                await self.update_task_completions(validator_hotkeys, expire_at)
+
+                logger.info("📝 performing scoring ...")
+                processed_request_ids = []
 
                 batch_size = 10
                 async for task_batch in self._get_task_batches(
@@ -975,19 +968,18 @@ class Validator:
                 traceback.print_exc()
                 pass
 
-    async def monitor_task_completions(self) -> None:
+    async def update_task_completions(
+        self, validator_hotkeys: List[str], expire_at: datetime
+    ) -> None:
         try:
-            logger.info("Monitoring Dojo task completions...")
-            validator_hotkeys: List[str] = self._get_validator_hotkeys()
-
+            logger.info("Updating Dojo task completions...")
             batch_size: int = 10
-            now: datetime = datetime_as_utc(datetime.now(timezone.utc))
 
             all_miner_responses = []
             all_request_ids = []
 
             async for task_batch in self._get_task_batches(
-                validator_hotkeys, batch_size, now
+                validator_hotkeys, batch_size, expire_at
             ):
                 if not task_batch:
                     continue
@@ -998,7 +990,7 @@ class Validator:
                     all_miner_responses.extend(miner_responses)
                     all_request_ids.append(request_id)
 
-                    if len(all_miner_responses) >= 50:  # Process in batches of 50
+                    if len(all_miner_responses) >= batch_size:
                         await self._update_miner_completions_batch(
                             all_request_ids, all_miner_responses
                         )
@@ -1011,8 +1003,8 @@ class Validator:
                     all_request_ids, all_miner_responses
                 )
 
-        except NoNewUnexpiredTasksYet as e:
-            logger.info(f"No new unexpired tasks yet: {e}")
+        except NoNewExpiredTasksYet as e:
+            logger.info(f"No new expired tasks yet: {e}")
         except Exception as e:
             logger.error(f"Error during Dojo task monitoring: {str(e)}")
             logger.debug(f"Traceback: {traceback.format_exc()}")
@@ -1021,7 +1013,10 @@ class Validator:
     #                         VALIDATOR HELPER FUNCTIONS                           #
     # ---------------------------------------------------------------------------- #
     def _get_validator_hotkeys(self) -> List[str]:
-        """Get the hotkeys of the validators in the metagraph."""
+        """Get the hotkeys of the validators in the metagraph.
+
+        Returns a list of validator hotkeys.
+        """
         validator_hotkeys: List[str] = [
             hotkey
             for uid, hotkey in enumerate(self.metagraph.hotkeys)
@@ -1049,7 +1044,9 @@ class Validator:
             yield task_batch
 
     async def _update_task(self, task: DendriteQueryResponse) -> List[FeedbackRequest]:
-        """Process a task and update the completion ranks and scores"""
+        """
+        Returns a list of updated miner responses
+        """
         logger.info(f"Processing task: {task.request.request_id}")
         request_id: str = task.request.request_id
         obfuscated_to_real_model_id: Dict[str, str] = await ORM.get_real_model_ids(
@@ -1076,7 +1073,11 @@ class Validator:
         miner_response: FeedbackRequest,
         obfuscated_to_real_model_id: Dict[str, str],
     ) -> FeedbackRequest | None:
-        """Process a miner response and update the completion ranks and scores"""
+        """
+        Gets task results from a miner. Calculates the average across all task results.
+
+        If no task results, return None. Else append it to miner completion response.
+        """
         if (
             not miner_response.axon
             or not miner_response.axon.hotkey
@@ -1113,9 +1114,13 @@ class Validator:
         self,
         request_ids: List[str],
         miner_responses: List[FeedbackRequest],
-        max_retries: int = 3,
+        max_retries: int = 20,
     ) -> None:
-        """Update the miner completions in the database in batches"""
+        """
+        Update the miner completions in the database in batches
+
+        If there are any failed updates, retry using failed_indices.
+        """
         remaining_responses = miner_responses
         remaining_request_ids = request_ids
 
@@ -1125,7 +1130,7 @@ class Validator:
                     success,
                     failed_indices,
                 ) = await ORM.update_miner_completions_by_request_id(
-                    remaining_request_ids, remaining_responses
+                    remaining_responses
                 )
                 if success:
                     logger.success(
@@ -1173,7 +1178,7 @@ class Validator:
             )
         except Exception as e:
             logger.error(
-                f"📝 Error occurred while calculating scores: {e} Request ID: {task.request.request_id}"
+                f"📝 Error occurred while calculating scores: {e}. Request ID: {task.request.request_id}"
             )
             return task.request.request_id
 
