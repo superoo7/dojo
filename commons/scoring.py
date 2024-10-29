@@ -373,8 +373,12 @@ class Scoring:
                     _get_miner_response_by_criteria(criteria, completion)
                 )
             miner_outputs.append(curr_miner_outputs)
-        if miner_outputs == [] or None in miner_outputs:
-            raise ValueError("Miner outputs cannot be empty or contain None values")
+
+        if miner_outputs == []:
+            raise ValueError("Miner outputs cannot be empty")
+
+        if None in miner_outputs:
+            raise ValueError("Miner outputs cannot contain None values")
 
         miner_outputs = np.array(miner_outputs)
         logger.debug(f"scoring: raw miner outputs\n{miner_outputs}")
