@@ -561,7 +561,8 @@ class Scoring:
             # #         criteria, request, valid_miner_responses
             # #     )
 
-            logger.error(f"📝 Filtered {len(valid_miner_responses)} valid responses")
+            logger.info(f"📝 Filtered {len(valid_miner_responses)} valid responses")
+            logger.debug(f"valid_miner_responses: {valid_miner_responses}")
 
             if not isinstance(criteria, MultiScoreCriteria):
                 raise NotImplementedError("Only multi-score criteria is supported atm")

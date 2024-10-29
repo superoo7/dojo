@@ -1059,7 +1059,9 @@ class Validator:
         updated_miner_responses: List[FeedbackRequest] = []
         for miner_response in task.miner_responses:
             try:
-                updated_response: FeedbackRequest = await self._update_miner_response(
+                updated_response: (
+                    FeedbackRequest | None
+                ) = await self._update_miner_response(
                     miner_response, obfuscated_to_real_model_id
                 )
                 if updated_response:
@@ -1108,52 +1110,53 @@ class Validator:
         return miner_response
 
     async def _update_miner_completions_batch(
-        self, request_ids: List[str], miner_responses: List[FeedbackRequest]
+        self,
+        request_ids: List[str],
+        miner_responses: List[FeedbackRequest],
+        max_retries: int = 3,
     ) -> None:
         """Update the miner completions in the database in batches"""
-        try:
-            success, failed_indices = await ORM.update_miner_completions_by_request_id(
-                request_ids, miner_responses
-            )
-            if success:
-                logger.success(
-                    f"Successfully updated {len(miner_responses)} miner completions for {len(request_ids)} requests"
-                )
-            else:
-                logger.error(
-                    f"Failed to update {len(failed_indices)} miner completions"
-                )
-        except Exception as e:
-            logger.error(f"Error updating miner completions batch: {e}")
+        remaining_responses = miner_responses
+        remaining_request_ids = request_ids
 
-    def _log_successful_update(
-        self, request_id: str, miner_responses: List[FeedbackRequest]
-    ) -> None:
-        hotkeys: List[str] = [m.axon.hotkey for m in miner_responses]
-        uids: List[int] = [
-            self.metagraph.hotkeys.index(hotkey)
-            for hotkey in hotkeys
-            if hotkey in self.metagraph.hotkeys
-        ]
-        logger.success(
-            f"Successfully updated miner completions for request id: {request_id}, uids: {uids}"
-        )
+        for attempt in range(max_retries):
+            try:
+                (
+                    success,
+                    failed_indices,
+                ) = await ORM.update_miner_completions_by_request_id(
+                    remaining_request_ids, remaining_responses
+                )
+                if success:
+                    logger.success(
+                        f"Successfully updated {len(remaining_responses)} miner completions for {len(remaining_request_ids)} requests"
+                    )
+                    return
+                else:
+                    if attempt == max_retries - 1:
+                        logger.error(
+                            f"Failed to update {len(failed_indices)} miner completions after {max_retries} attempts"
+                        )
+                    else:
+                        logger.warning(
+                            f"Retrying {len(failed_indices)} failed updates, attempt {attempt+2}/{max_retries}"
+                        )
+                        remaining_responses = [
+                            remaining_responses[i] for i in failed_indices
+                        ]
+                        remaining_request_ids = [
+                            remaining_request_ids[i] for i in failed_indices
+                        ]
+                        await asyncio.sleep(2**attempt)
 
-    def _log_failed_update(
-        self,
-        request_id: str,
-        miner_responses: List[FeedbackRequest],
-        failed_response_ids: List[int],
-    ) -> None:
-        failed_miner_responses: List[FeedbackRequest] = [
-            miner_responses[i] for i in failed_response_ids
-        ]
-        failed_uids: List[int] = [
-            self.metagraph.hotkeys.index(m.axon.hotkey) for m in failed_miner_responses
-        ]
-        logger.error(
-            f"Failed to update miner completions for request id: {request_id}, uids: {failed_uids}"
-        )
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Error updating miner completions batch after {max_retries} attempts: {e}"
+                    )
+                else:
+                    logger.warning(f"Error during attempt {attempt+1}, retrying: {e}")
+                    await asyncio.sleep(2**attempt)
 
     async def _score_task(self, task: DendriteQueryResponse) -> str:
         """Process a task and calculate the scores for the miner responses"""
@@ -1169,7 +1172,9 @@ class Validator:
                 miner_responses=task.miner_responses,
             )
         except Exception as e:
-            logger.error(f"📝 Error occurred while calculating scores: {e}")
+            logger.error(
+                f"📝 Error occurred while calculating scores: {e} Request ID: {task.request.request_id}"
+            )
             return task.request.request_id
 
         logger.debug(f"📝 Got hotkey to score: {hotkey_to_score}")
