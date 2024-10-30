@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import gc
+import math
 import random
 import time
 import traceback
@@ -1054,18 +1055,34 @@ class Validator:
         )
 
         updated_miner_responses: List[FeedbackRequest] = []
-        for miner_response in task.miner_responses:
-            try:
-                updated_response: (
-                    FeedbackRequest | None
-                ) = await self._update_miner_response(
-                    miner_response, obfuscated_to_real_model_id
-                )
-                if updated_response:
-                    updated_miner_responses.append(updated_response)
-            except InvalidMinerResponse as e:
-                logger.error(f"Invalid miner response: {e}")
 
+        batch_size = 30
+        num_batches = math.ceil(len(task.miner_responses) / batch_size)
+        for i in range(0, len(task.miner_responses), batch_size):
+            safe_lim = min(i + batch_size, len(task.miner_responses))
+            batch = task.miner_responses[i:safe_lim]
+
+            logger.debug(f"Processing batch {i//batch_size + 1} of {num_batches}")
+
+            tasks = [
+                self._update_miner_response(miner_response, obfuscated_to_real_model_id)
+                for miner_response in batch
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, FeedbackRequest):
+                    updated_miner_responses.append(result)
+                elif isinstance(result, InvalidMinerResponse):
+                    logger.error(f"Invalid miner response: {result}")
+                elif isinstance(result, Exception):
+                    logger.error(f"Unexpected error: {result}")
+                else:
+                    logger.error(f"Unexpected return type: {type(result)}")
+
+        logger.success(
+            f"Completed processing {len(updated_miner_responses)} miner responses in {num_batches} batches"
+        )
         return updated_miner_responses
 
     async def _update_miner_response(
