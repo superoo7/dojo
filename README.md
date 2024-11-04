@@ -204,8 +204,9 @@ docker --version
 docker compose version
 ```
 
-4. Start local subtensor node (__optional__)
-> The included subtensor service only expose 30333 (p2p) to the public, 9933 and 9944 are only accesssible internally in the docker network, feel free to change the configuration if required.
+4. Start local subtensor node (**optional**)
+   > The included subtensor service only expose 30333 (p2p) to the public, 9933 and 9944 are only accesssible internally in the docker network, feel free to change the configuration if required.
+
 ```bash
 # Mainnet
 make subtensor-mainnet
