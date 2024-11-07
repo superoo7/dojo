@@ -158,6 +158,8 @@ def minmax_scale(tensor: torch.Tensor | np.ndarray) -> torch.Tensor:
         tensor = torch.from_numpy(tensor)
     min = tensor.min()
     max = tensor.max()
+    if min == max:
+        return tensor
     return (tensor - min) / (max - min)
 
 
