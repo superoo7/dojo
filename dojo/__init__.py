@@ -31,7 +31,8 @@ __spec_version__ = (
 
 
 VALIDATOR_MIN_STAKE = 20000
-TASK_DEADLINE = 6 * 60 * 60
+# TASK_DEADLINE = 6 * 60 * 60
+TASK_DEADLINE = 660
 
 # Define the time intervals for various tasks.
 VALIDATOR_RUN = 180
