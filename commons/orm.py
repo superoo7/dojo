@@ -154,7 +154,7 @@ class ORM:
                 order={"created_at": "desc"},
             )
 
-            logger.info(F"Miner Responses: {miner_responses}")
+            logger.info(f"Miner Responses: {miner_responses}")
 
             responses: list[DendriteQueryResponse] = []
             for validator_request in validator_requests:
