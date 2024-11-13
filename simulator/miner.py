@@ -9,6 +9,7 @@ from dojo.protocol import (
     TaskResult,
     Result
 )
+from commons.utils import get_new_uuid
 import json
 from datetime import datetime, timezone
 
@@ -85,7 +86,7 @@ class MinerSim(Miner):
             if feedback_request:
                 task_results = [
                     TaskResult(
-                        id=synapse.task_id,
+                        id=get_new_uuid(),
                         status='COMPLETED',
                         created_at=current_time,
                         updated_at=current_time,
@@ -95,6 +96,7 @@ class MinerSim(Miner):
                                 value=feedback_request.ground_truth
                             )
                         ],
+                        worker_id=get_new_uuid(),
                         task_id=synapse.task_id
                     )
                 ]
