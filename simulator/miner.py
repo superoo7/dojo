@@ -41,7 +41,9 @@ class MinerSim(Miner):
                 return synapse
 
             # Empty out completion response since not need in simulator
-            synapse.completion_responses = []
+            # synapse.completion_responses = []
+            new_synapse = synapse.model_copy(deep=True)
+            new_synapse.completion_responses = []
 
             synapse.dojo_task_id = synapse.request_id
             self.hotkey_to_request[synapse.dendrite.hotkey] = synapse
@@ -49,7 +51,7 @@ class MinerSim(Miner):
             redis_key = f"feedback:{synapse.request_id}"
             self.redis_client.set(
                 redis_key,
-                synapse.model_dump_json(),
+                new_synapse.model_dump_json(),
                 ex=36000  # expire after 10 hours
             )
             logger.info(f"Stored feedback request {synapse.request_id}")
