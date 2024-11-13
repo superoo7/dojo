@@ -10,17 +10,23 @@ class ObjectManager:
     @classmethod
     def get_miner(cls):
         from neurons.miner import Miner
+        from simulator.miner import MinerSim
 
         if cls._miner is None:
-            cls._miner = Miner()
+            cls._miner = MinerSim()
+        # if cls._miner is None:
+        #     cls._miner = Miner()
         return cls._miner
 
     @classmethod
     def get_validator(cls):
         from neurons.validator import Validator
+        from simulator.validator import ValidatorSim
 
         if cls._validator is None:
-            cls._validator = Validator()
+            cls._validator = ValidatorSim()
+        # if cls._validator is None:
+        #     cls._validator = Validator()
         return cls._validator
 
     @classmethod
