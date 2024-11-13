@@ -9,7 +9,8 @@ from dojo.protocol import FeedbackRequest, TaskType, MultiScoreCriteria, Dendrit
 from neurons.validator import Validator
 from bittensor.btlogging import logging as logger
 from tenacity import RetryError
-
+import bittensor as bt
+import asyncio
 
 class ValidatorSim(Validator):
     def __init__(self):
