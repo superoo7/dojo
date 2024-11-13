@@ -10,7 +10,7 @@ from dojo.protocol import (
     Result
 )
 import json
-
+from datetime import datetime
 
 class MinerSim(Miner):
     def __init__(self):
@@ -78,18 +78,24 @@ class MinerSim(Miner):
             request_dict = json.loads(request_data) if request_data else None
             feedback_request = FeedbackRequest(**request_dict) if request_dict else None
 
+            logger.info(f"Feedback Request: {feedback_request}")
+
+            current_time = datetime.now(datetime.UTC).isoformat()
+
             if feedback_request:
                 task_results = [
                     TaskResult(
-                        id=feedback_request.dojo_task_id,
+                        id=str(feedback_request.dojo_task_id),
                         status='COMPLETED',
+                        created_at=current_time,
+                        updated_at=current_time,
                         result_data=[
                             Result(
                                 type=feedback_request.criteria_types[0].type,
                                 value=feedback_request.ground_truth
                             )
                         ],
-                        task_id=synapse.task_id
+                        task_id=str(synapse.task_id)
                     )
                 ]
 
