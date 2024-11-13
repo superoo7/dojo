@@ -186,15 +186,12 @@ class Validator:
             tasks = []
 
             for axon in batch_axons:
-                # shuffle synapse Responses
-                shuffled_completions = random.sample(
-                    synapse.completion_responses,
-                    k=len(synapse.completion_responses),
-                )
+                # Create a deep copy of the completion responses for each axon
+                shuffled_completions = copy.deepcopy(synapse.completion_responses)
+                random.shuffle(shuffled_completions)
 
                 # Apply obfuscation to each completion's files
-                # TODO re-nable obfuscation
-                # await Validator._obfuscate_completion_files(shuffled_completions)
+                await Validator._obfuscate_completion_files(shuffled_completions)
 
                 criteria_types = []
                 # ensure criteria options same order as completion_responses
