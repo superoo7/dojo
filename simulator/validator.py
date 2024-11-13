@@ -12,15 +12,16 @@ from tenacity import RetryError
 import bittensor as bt
 import asyncio
 
+
 class ValidatorSim(Validator):
     def __init__(self):
         super().__init__()
         logger.info("Starting Validator Simulator")
 
     async def send_request(
-        self,
-        synapse: FeedbackRequest | None = None,
-        external_user: bool = False,
+            self,
+            synapse: FeedbackRequest | None = None,
+            external_user: bool = False,
     ):
         start = get_epoch_time()
         # typically the request may come from an external source however,
@@ -31,24 +32,13 @@ class ValidatorSim(Validator):
 
         request_id = get_new_uuid()
         # sel_miner_uids = await self.get_miner_uids(external_user, request_id)
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
-        # TODO @dev REMOVE AFTER TESTING
         sel_miner_uids = sorted(list(self._active_miner_uids))
 
         axons = [
             self.metagraph.axons[uid]
             for uid in sel_miner_uids
             if self.metagraph.axons[uid].hotkey.casefold()
-            != self.wallet.hotkey.ss58_address.casefold()
+               != self.wallet.hotkey.ss58_address.casefold()
         ]
         if not len(axons):
             logger.warning("🤷 No axons to query ... skipping")

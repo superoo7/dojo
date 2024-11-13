@@ -941,6 +941,8 @@ class Validator:
             try:
                 validator_hotkeys: List[str] = self._get_validator_hotkeys()
 
+                logger.info(f"List of validator hotkeys: {validator_hotkeys}")
+
                 # Grab tasks that were expired TASK_DEADLINE duration ago
                 expire_from = (
                     datetime_as_utc(datetime.now(timezone.utc))
