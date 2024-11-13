@@ -1,5 +1,4 @@
 import os
-import json
 import redis
 import traceback
 from neurons.miner import Miner
@@ -91,7 +90,7 @@ class MinerSim(Miner):
 
                 synapse.task_results = task_results
 
-                await self.redis_client.delete(redis_key)
+                self.redis_client.delete(redis_key)
                 logger.debug(f"Processed task result for task {synapse.task_id}")
             else:
                 logger.debug(f"No task result found for task id: {synapse.task_id}")
