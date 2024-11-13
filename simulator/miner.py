@@ -48,7 +48,7 @@ class MinerSim(Miner):
             self.hotkey_to_request[synapse.dendrite.hotkey] = synapse
 
             redis_key = f"feedback:{synapse.request_id}"
-            await self.redis_client.set(
+            self.redis_client.set(
                 redis_key,
                 synapse.model_dump_json(),
                 ex=36000  # expire after 10 hours
