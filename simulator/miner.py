@@ -9,6 +9,7 @@ from dojo.protocol import (
     TaskResult,
     Result
 )
+import json
 
 
 class MinerSim(Miner):
@@ -73,7 +74,9 @@ class MinerSim(Miner):
 
             redis_key = f"feedback:{synapse.task_id}"
             request_data = self.redis_client.get(redis_key)
-            feedback_request = FeedbackRequest(**request_data)
+            
+            request_dict = json.loads(request_data) if request_data else None
+            feedback_request = FeedbackRequest(**request_dict) if request_dict else None
 
             if feedback_request:
                 task_results = [

@@ -154,8 +154,6 @@ class ORM:
                 order={"created_at": "desc"},
             )
 
-            logger.info(f"Miner Responses: {miner_responses}")
-
             responses: list[DendriteQueryResponse] = []
             for validator_request in validator_requests:
                 vali_request = map_feedback_request_model_to_feedback_request(
