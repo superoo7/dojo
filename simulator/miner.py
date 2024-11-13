@@ -25,6 +25,7 @@ class MinerSim(Miner):
                 decode_responses=True
             )
             logger.info("Redis connection established")
+            logger.info("Starting Miner Simulator")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             raise

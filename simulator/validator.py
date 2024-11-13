@@ -9,6 +9,7 @@ from bittensor.btlogging import logging as logger
 class ValidatorSim(Validator):
     def __init__(self):
         super().__init__()
+        logger.info("Starting Validator Simulator")
 
     @staticmethod
     async def _send_shuffled_requests(
