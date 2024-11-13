@@ -1,6 +1,6 @@
 PRECOMMIT_VERSION="3.7.1"
 UNAME := $(shell uname)
-.PHONY: hooks install install-dev install-test btcli validator-pull miner-pull miner-decentralised miner-centralised validator validator-up-deps miner-worker-api dojo-cli miner-decentralised-logs miner-centralised-logs validator-logs
+.PHONY: hooks install install-dev install-test btcli validator-pull miner-pull validator-down miner-down miner-decentralised miner-centralised validator validator-up-deps miner-worker-api dojo-cli miner-decentralised-logs miner-centralised-logs validator-logs subtensor-mainnet subtensor-testnet
 
 hooks:
 	@echo "Grabbing pre-commit version ${PRECOMMIT_VERSION} and installing pre-commit hooks"
@@ -46,6 +46,12 @@ validator-pull:
 miner-pull:
 	docker compose --env-file .env.miner -f docker-compose.miner.yaml pull --include-deps
 
+validator-down:
+	docker compose --env-file .env.validator -f docker-compose.validator.yaml down
+
+miner-down:
+	docker compose --env-file .env.miner -f docker-compose.miner.yaml down
+
 # ---------------------------------------------------------------------------- #
 #                                 CORE SERVICES                                #
 # ---------------------------------------------------------------------------- #
@@ -80,3 +86,13 @@ miner-centralised-logs:
 
 validator-logs:
 	docker compose --env-file .env.validator -f docker-compose.validator.yaml logs -f validator
+
+# ---------------------------------------------------------------------------- #
+#                             LOCAL SUBTENSOR                                  #
+# ---------------------------------------------------------------------------- #
+
+subtensor-mainnet:
+	docker compose -f docker-compose.subtensor.yaml up -d mainnet-lite
+
+subtensor-testnet:
+	docker compose -f docker-compose.subtensor.yaml up -d testnet-lite

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from scipy.stats import spearmanr
 from torch.nn import functional as F
 
+from commons.utils import _terminal_plot
 from dojo.protocol import (
     CodeAnswer,
     CompletionResponses,
@@ -42,6 +43,84 @@ class ConsensusScore(BaseModel):
     score: torch.Tensor
     mse_by_miner: torch.Tensor
     icc_by_miner: torch.Tensor
+
+
+def _reward_cubic(
+    miner_outputs: np.ndarray,
+    ground_truth: np.ndarray,
+    scaling: float,
+    translation: float,
+    offset: float,
+    visualize: bool = False,
+) -> np.ndarray:
+    """Calculate cubic reward based on miner outputs and ground truth.
+
+    Args:
+        miner_outputs (np.ndarray): 2D array of miner outputs (shape: num_miners x num_completions).
+        ground_truth (np.ndarray): 1D array of ground truth values (shape: num_completions).
+        scaling (float): Scaling factor for the cubic function.
+        translation (float): Translation factor for the cubic function.
+        offset (float): Offset for the cubic function.
+
+    Returns:
+        np.ndarray: Transformed points based on the cubic function.
+    """
+    # ensure ground truth is a column vector for broadcasting
+    # shape: (1, num_completions)
+    ground_truth = ground_truth.reshape(1, -1)
+    logger.debug(
+        f"scoring: Reshaped ground truth shape: {ground_truth.shape}\n array: {ground_truth}"
+    )
+
+    # ensure dims for broadcasting
+    assert len(ground_truth.shape) == 2
+    assert len(miner_outputs.shape) == 2
+
+    # shape: (num_miners,)
+    # number range [-1, 1]
+    x = F.cosine_similarity(
+        torch.from_numpy(miner_outputs), torch.from_numpy(ground_truth), dim=1
+    ).numpy()
+    # Convert nans to -1 to send it to the bottom
+    x = np.where(np.isnan(x), -1, x)
+
+    # transform from range [-1, 1] to [0, 1]
+    x = (x + 1) / 2
+    logger.debug(f"scoring: cosine similarity shape: {x.shape}\n array: {x}")
+    # ensure sum is 1
+    x = F.normalize(torch.from_numpy(x), p=1, dim=0)
+    assert x.shape[0] == miner_outputs.shape[0]
+
+    # apply the cubic transformation
+    points = scaling * (x - translation) ** 3 + offset
+    logger.debug(
+        f"scoring: cubic reward points shape: {points.shape}\n array: {points}"
+    )
+
+    # case where a miner provides the same score for all completions
+    # convert any nans to zero
+    points = np.where(np.isnan(points), 0, points)
+    logger.debug(
+        f"scoring: cubic reward no nans shape: {points.shape}\n array: {points}"
+    )
+    if visualize:
+        _terminal_plot("scoring: cubic reward (raw)", points, sort=True)
+
+    # ensure all values are in the range [0, 1]
+    points = minmax_scale(points)
+    logger.debug(
+        f"scoring: cubic reward minmax scaled shape: {points.shape}\n array: {points}"
+    )
+    points = points.numpy()
+    if visualize:
+        _terminal_plot("scoring: cubic reward (minmax scaled)", points, sort=True)
+
+    assert isinstance(points, np.ndarray)
+    return points
+
+
+def _reward_l1_norm(miner_outputs: np.ndarray, ground_truth: np.ndarray):
+    return np.linalg.norm(miner_outputs - ground_truth, axis=1)
 
 
 class Score(BaseModel):
@@ -192,9 +271,11 @@ class Scoring:
                 x.score
                 for x in sorted(
                     response.completion_responses,
-                    key=lambda x: model_id_to_avg_score[x.model]
-                    if criteria == MultiScoreCriteria
-                    else model_id_to_avg_rank[x.model],
+                    key=lambda x: (
+                        model_id_to_avg_score[x.model]
+                        if criteria == MultiScoreCriteria
+                        else model_id_to_avg_rank[x.model]
+                    ),
                 )
             ]
             # order scores based on order in model_id_to_avg_score
@@ -315,8 +396,11 @@ class Scoring:
                     _get_miner_response_by_criteria(criteria, completion)
                 )
             miner_outputs.append(curr_miner_outputs)
-        if miner_outputs == [] or None in miner_outputs:
-            raise ValueError("Miner outputs cannot be empty or contain None values")
+        if miner_outputs == []:
+            raise ValueError("Miner outputs cannot be empty")
+
+        if None in miner_outputs:
+            raise ValueError("Miner outputs cannot contain None values")
 
         miner_outputs = np.array(miner_outputs)
         logger.debug(f"scoring: raw miner outputs\n{miner_outputs}")
@@ -338,18 +422,34 @@ class Scoring:
         logger.info(f"scoring: Miner outputs\n{miner_outputs}")
         logger.info(f"scoring: Ground truth\n{ground_truth_arr}")
 
-        l1_norm = np.linalg.norm(miner_outputs - ground_truth_arr, axis=1)
-        logger.debug(f"scoring: l1 norm\n{l1_norm}")
+        # l1_norm = np.linalg.norm(miner_outputs - ground_truth_arr, axis=1)
+        # l1_norm = np.linalg.norm(miner_outputs - ground_truth_arr, axis=1)
+        cubic_reward: np.ndarray = _reward_cubic(
+            miner_outputs, ground_truth_arr, 0.006, 7, 2, visualize=True
+        )
+        logger.debug(f"scoring: cubic reward\n{cubic_reward}")
 
-        # case where a miner provides the same score for all completions
-        # convert any nans to zero
-        l1_norm = np.where(np.isnan(l1_norm), 0, l1_norm)
-
-        logger.debug(f"scoring: l1 norm no nans\n{l1_norm}")
         # normalize to ensure sum is 1
-        l1_norm = l1_norm / np.sum(l1_norm)
-        logger.debug(f"scoring: l1 norm normalized (sum=1)\n{l1_norm}")
-        return torch.from_numpy(l1_norm)
+        cubic_reward = cubic_reward / np.sum(cubic_reward)
+
+        logger.debug(f"scoring: cubic reward normalized (sum=1)\n{cubic_reward}")
+
+        # calculate sum for each segment of the cubic reward
+        try:
+            # create a copy of cubic reward
+            cubic_reward_copy = np.copy(cubic_reward)
+            cubic_reward_copy.sort()
+            segment_size = len(cubic_reward_copy) // 5
+            segment_sums = [
+                np.sum(cubic_reward_copy[i * segment_size : (i + 1) * segment_size])
+                for i in range(5)
+            ]
+            logger.debug(f"scoring: segment sums\n{segment_sums}")
+        except Exception as e:
+            logger.debug(f"scoring: error calculating segment sums: {e}")
+            pass
+
+        return torch.from_numpy(cubic_reward)
 
     @staticmethod
     def cmp_ground_truth(
@@ -386,8 +486,11 @@ class Scoring:
                     _get_miner_response_by_criteria(criteria, completion)
                 )
             miner_outputs.append(curr_miner_outputs)
-        if miner_outputs == [] or None in miner_outputs:
-            raise ValueError("Miner outputs cannot be empty or contain None values")
+        if miner_outputs == []:
+            raise ValueError("Miner outputs cannot be empty")
+
+        if None in miner_outputs:
+            raise ValueError("Miner outputs cannot contain None values")
 
         miner_outputs = np.array(miner_outputs)
 
@@ -473,6 +576,23 @@ class Scoring:
                     continue
                 valid_miner_responses.append(response)
 
+            if not len(valid_miner_responses):
+                logger.info(f"📝 No valid responses for {request.request_id}")
+
+                for r in miner_responses:
+                    hotkey_to_final_score[r.axon.hotkey] = 0.0  # type: ignore
+                consensus_score = ConsensusScore(
+                    score=torch.zeros(len(miner_responses)),
+                    mse_by_miner=torch.zeros(len(miner_responses)),
+                    icc_by_miner=torch.zeros(len(miner_responses)),
+                )
+
+                criteria_to_miner_scores[criteria.type] = Score(
+                    ground_truth=torch.zeros(len(miner_responses)),
+                    consensus=consensus_score,
+                )
+                return criteria_to_miner_scores, hotkey_to_final_score
+
             # if len(valid_miner_responses) < 2:
             #     logger.warning(
             #         f"Skipping scoring for request id: {request.request_id} as not enough valid responses"
@@ -487,7 +607,9 @@ class Scoring:
             # #         criteria, request, valid_miner_responses
             # #     )
 
-            logger.debug(f"Got {len(valid_miner_responses)} valid responses")
+            logger.info(
+                f"📝 Filtered {len(valid_miner_responses)} valid responses for request id {request.request_id}"
+            )
 
             if not isinstance(criteria, MultiScoreCriteria):
                 raise NotImplementedError("Only multi-score criteria is supported atm")
@@ -777,15 +899,107 @@ def _test_ground_truth_score_v1():
     import matplotlib.pyplot as plt
 
     scores = Scoring.ground_truth_score_V1(criteria, gt, miner_responses)
-    scores = [score / sum(scores) for score in scores]  # Normalize to ensure sum is 1
+    scores, _ = torch.sort(scores, descending=False)
+    # Check if the sum of scores is 1
+    print(f"{scores=}")
 
     plt.figure(figsize=(10, 6))
-    plt.bar(range(len(scores)), scores)
+    (line,) = plt.plot(range(len(scores)), scores, marker="o")
     plt.xlabel("Miner Response Index")
     plt.ylabel("Score")
     plt.title("Ground Truth Scores")
+
+    annot = plt.gca().annotate(
+        "",
+        xy=(0, 0),
+        xytext=(20, 20),
+        textcoords="offset points",
+        bbox=dict(boxstyle="round", fc="w"),
+        arrowprops=dict(arrowstyle="->"),
+    )
+    annot.set_visible(False)
+
+    def update_annot(line, ind):
+        x, y = line.get_data()
+        annot.xy = (x[ind["ind"][0]], y[ind["ind"][0]])
+        text = f"{y[ind['ind'][0]]:.2f}"
+        annot.set_text(text)
+        annot.get_bbox_patch().set_alpha(0.4)
+
+    def hover(event):
+        vis = annot.get_visible()
+        if event.inaxes == plt.gca():
+            cont, ind = line.contains(event)
+            if cont:
+                update_annot(line, ind)
+                annot.set_visible(True)
+                plt.gcf().canvas.draw_idle()
+            else:
+                if vis:
+                    annot.set_visible(False)
+                    plt.gcf().canvas.draw_idle()
+
+    plt.gcf().canvas.mpl_connect("motion_notify_event", hover)
     plt.show()
 
 
+def _test_reward_cubic():
+    miner_outputs = np.array(
+        [
+            [0.1, 0.2, 0.3, 0.4],
+            [0.5, 0.6, 0.7, 0.8],
+            [0.9, 0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6, 0.7],
+            [0.8, 0.9, 0.1, 0.2],
+            [0.3, 0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9, 0.1],
+            [0.2, 0.3, 0.4, 0.5],
+            [0.6, 0.7, 0.8, 0.9],
+            [np.nan, np.nan, np.nan, np.nan],
+            [0.15, 0.25, 0.35, 0.45],
+            [0.55, 0.65, 0.75, 0.85],
+            [0.95, 0.05, 0.15, 0.25],
+            [0.45, 0.55, 0.65, 0.75],
+            [0.85, 0.95, 0.05, 0.15],
+            [0.35, 0.45, 0.55, 0.65],
+            [0.75, 0.85, 0.95, 0.05],
+            [0.25, 0.35, 0.45, 0.55],
+            [0.65, 0.75, 0.85, 0.95],
+            [0.05, 0.15, 0.25, 0.35],
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0, 0.0],
+            [0.99, 0.01, 0.01, 0.99],
+            [0.01, 0.99, 0.99, 0.01],
+            [0.5, 0.5, 0.5, 0.5],
+            [0.25, 0.75, 0.75, 0.25],
+            [0.75, 0.25, 0.25, 0.75],
+            [0.1, 0.9, 0.9, 0.1],
+            [1, 0.6666667, 0.33333334, 0],
+            [0.0, 0.0, 0.0, 0.0],
+        ]
+    )
+    ground_truth = np.array([0, 0.33333334, 0.6666667, 1])
+    scaling = 0.006
+    translation = 7
+    offset = 2
+
+    expected_shape = (30,)
+    result = _reward_cubic(miner_outputs, ground_truth, scaling, translation, offset)
+
+    assert isinstance(result, np.ndarray), "Result should be a numpy array"
+    assert (
+        result.shape == expected_shape
+    ), f"Expected shape {expected_shape}, but got {result.shape}"
+    assert np.all(result >= 0) and np.all(
+        result <= 1
+    ), "All values should be in the range [0, 1]"
+
+    # Visualize the result using _terminal_plot
+    _terminal_plot("Cubic Reward Test Result", result, sort=False)
+
+    print("test_reward_cubic passed.")
+
+
 if __name__ == "__main__":
-    _test_ground_truth_score_v1()
+    # _test_ground_truth_score_v1()
+    _test_reward_cubic()

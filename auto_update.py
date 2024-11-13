@@ -24,12 +24,12 @@ BRANCH = "main"
 
 CONFIG = {
     "validator": {
-        "images": ["dojo-synthetic-api"],
+        "images": ["dojo-synthetic-api", "dojo"],
         "docker_compose_down": "docker compose --env-file .env.validator -f docker-compose.validator.yaml down",
         "docker_compose_up": "docker compose --env-file .env.validator -f docker-compose.validator.yaml up --build -d validator",
     },
     "miner-decentralised": {
-        "images": ["dojo-worker-api", "dojo-ui"],
+        "images": ["dojo-worker-api", "dojo-ui", "dojo"],
         "docker_compose_down": "docker compose --env-file .env.miner -f docker-compose.miner.yaml down",
         "docker_compose_up": "docker compose --env-file .env.miner -f docker-compose.miner.yaml up --build -d miner-decentralised",
     },
@@ -37,7 +37,7 @@ CONFIG = {
         "services": [
             "miner-centralised",
         ],
-        "images": [],
+        "images": ["dojo"],
         "docker_compose_down": "docker compose --env-file .env.miner -f docker-compose.miner.yaml down",
         "docker_compose_up": "docker compose --env-file .env.miner -f docker-compose.miner.yaml up --build -d miner-centralised",
     },
@@ -252,6 +252,7 @@ def main(service_name):
     config = CONFIG[service_name]
 
     pull_docker_images(config["images"])
+    restart_docker(service_name)
 
     try:
         # Start the periodic check loop
@@ -259,6 +260,10 @@ def main(service_name):
             logger.info("Checking for updates...")
             current_dojo_version = get_current_version()
             new_dojo_version = get_latest_remote_tag()
+
+            logger.info(f"Current version: {current_dojo_version}")
+            logger.info(f"Latest version: {new_dojo_version}")
+
             has_image_updates = check_for_image_updates(config["images"])
 
             # Check if either the version has changed or there are image updates
@@ -271,7 +276,6 @@ def main(service_name):
 
                 # Restart Docker if there are any updates
                 restart_docker(service_name)
-
             logger.info(f"Sleeping for {CHECK_INTERVAL} seconds.")
             time.sleep(CHECK_INTERVAL)
     except KeyboardInterrupt:

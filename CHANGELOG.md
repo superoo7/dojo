@@ -1,3 +1,96 @@
+## [1.4.0](https://github.com/tensorplex-labs/dojo/compare/v1.3.3...v1.4.0) (2024-10-31)
+
+### Features
+
+* allow miners to set TASK_MAX_RESULTS ([#58](https://github.com/tensorplex-labs/dojo/issues/58)) ([ef9af28](https://github.com/tensorplex-labs/dojo/commit/ef9af28c30cd010cb2d14ca5ea52ec2d02cc16c4))
+
+### Bug Fixes
+
+* local variable ([54eb11f](https://github.com/tensorplex-labs/dojo/commit/54eb11f86681540fea82555df5db2d816c486497))
+* update correct param names ([c5e1823](https://github.com/tensorplex-labs/dojo/commit/c5e182390503ce174886f7372cd265569d95f511))
+
+### Performance Improvements
+
+* add validation for expiry times ([272efbb](https://github.com/tensorplex-labs/dojo/commit/272efbb12782cfad57bbf32385a2b204241db372))
+* add validation for expiry times ([e75c9a5](https://github.com/tensorplex-labs/dojo/commit/e75c9a51db5aa507bb94aeca338075b53416d6fd))
+* ensure miner scores updated per func call, not per task ([#62](https://github.com/tensorplex-labs/dojo/issues/62)) ([5339f09](https://github.com/tensorplex-labs/dojo/commit/5339f09704a85f726394b948c23c7298e6128322))
+* remove unused function ([a64b66e](https://github.com/tensorplex-labs/dojo/commit/a64b66e5b37d4caaeb6328da4bef08bce00249ce))
+* update completions timing logic ([5b8adfb](https://github.com/tensorplex-labs/dojo/commit/5b8adfb9ecc795584ffdd45b2f48a32456b1c127))
+
+## [1.3.3](https://github.com/tensorplex-labs/dojo/compare/v1.3.2...v1.3.3) (2024-10-28)
+
+### Bug Fixes
+
+* disabled the _ensure_subtensor_ws_connected func ([#52](https://github.com/tensorplex-labs/dojo/issues/52)) ([0142023](https://github.com/tensorplex-labs/dojo/commit/0142023bbae39e75a32b22d644f3177413a437d9))
+* scores shapes ([#55](https://github.com/tensorplex-labs/dojo/issues/55)) ([72c4f04](https://github.com/tensorplex-labs/dojo/commit/72c4f0469af44f1212eb54be6221aff3fbf0caa9))
+* set wait for finalization = False ([2911fb0](https://github.com/tensorplex-labs/dojo/commit/2911fb09c9ffca4b473f65342593999917e6f007))
+
+## [1.3.2](https://github.com/tensorplex-labs/dojo/compare/v1.3.1...v1.3.2) (2024-10-27)
+
+### Bug Fixes
+
+* add try except for calculating scores ([53285ff](https://github.com/tensorplex-labs/dojo/commit/53285ffbd6e67ad716b77dfe18ae196f9599867a))
+* convert to np array and back to torch ([fa7bacc](https://github.com/tensorplex-labs/dojo/commit/fa7baccdb3a44b93d5d398404a5dd3bf2048f100))
+* increase prisma tx timeout, poll tasks every 5 min ([b109592](https://github.com/tensorplex-labs/dojo/commit/b109592d00a2d59580bcf96f17b0f6b52ca16d94))
+* reuse weight_utils function ([2e45a0a](https://github.com/tensorplex-labs/dojo/commit/2e45a0a4c50d69a6c3929c697ed210b0e1f4749a))
+
+## [1.3.1](https://github.com/tensorplex-labs/dojo/compare/v1.3.0...v1.3.1) (2024-10-27)
+
+### Bug Fixes
+
+* increase save_task timeout from 5 to 30s ([5dc8171](https://github.com/tensorplex-labs/dojo/commit/5dc8171865aa8547153e7c009b383ec72366d911))
+* set weights call hanging ([638a3a5](https://github.com/tensorplex-labs/dojo/commit/638a3a54bfd0a4840acec310981478f4b58ecd35))
+* set weights, mini batching update miner responses, update logs ([#48](https://github.com/tensorplex-labs/dojo/issues/48)) ([2e72093](https://github.com/tensorplex-labs/dojo/commit/2e72093465e2ce65cfe554a63c9191bc7c91f680))
+
+## [1.3.0](https://github.com/tensorplex-labs/dojo/compare/v1.2.2...v1.3.0) (2024-10-26)
+
+### Features
+
+* add plotting of weights in terminal for logging ([0376aa5](https://github.com/tensorplex-labs/dojo/commit/0376aa577cbc93bab58f56d969e8fba2ca980b4e))
+* tune cubic function for scores ([0a23e1d](https://github.com/tensorplex-labs/dojo/commit/0a23e1db42da41078626df2cc0352323dd5c0bf8))
+
+## [1.2.2](https://github.com/tensorplex-labs/dojo/compare/v1.2.1...v1.2.2) (2024-10-25)
+
+## [1.2.1](https://github.com/tensorplex-labs/dojo/compare/v1.2.0...v1.2.1) (2024-10-25)
+
+### Bug Fixes
+
+* add aynscio lock for send request ([8a006d7](https://github.com/tensorplex-labs/dojo/commit/8a006d774db82089efa5dda209df1b8d9cff0e0f))
+* add batching for sending feedback requests ([88eebb3](https://github.com/tensorplex-labs/dojo/commit/88eebb3edc17330fdea4b2f8514f4b2dc9c3c7d7))
+
+## [1.2.0](https://github.com/tensorplex-labs/dojo/compare/v1.1.7...v1.2.0) (2024-10-24)
+
+### Features
+
+* add more logs to wandb ([#29](https://github.com/tensorplex-labs/dojo/issues/29)) ([0e81a5f](https://github.com/tensorplex-labs/dojo/commit/0e81a5fd090a4db351193393151eeab7c7d45ea8))
+
+### Bug Fixes
+
+* auto-updater on start, prisma output files on host machine ([#33](https://github.com/tensorplex-labs/dojo/issues/33)) ([0448f6c](https://github.com/tensorplex-labs/dojo/commit/0448f6cff2578fbd28412374b7a3f18545f2bc71))
+
+## [1.1.7](https://github.com/tensorplex-labs/dojo/compare/v1.1.6...v1.1.7) (2024-10-23)
+
+### Bug Fixes
+
+* min weights ([f772ef2](https://github.com/tensorplex-labs/dojo/commit/f772ef20d367d55d1e0080021e3e87ebc13379dc))
+* runtimeerror and asyncio context already entered ([#30](https://github.com/tensorplex-labs/dojo/issues/30)) ([c5b53fb](https://github.com/tensorplex-labs/dojo/commit/c5b53fb188664a5e0ed3dca163a7899a2d853df2))
+* scoring mechanism use ground truth only, use L1 norm ([#31](https://github.com/tensorplex-labs/dojo/issues/31)) ([4085dd8](https://github.com/tensorplex-labs/dojo/commit/4085dd8055a6205b312de54b94d63cd08265184d))
+* updated auto-update script ([#25](https://github.com/tensorplex-labs/dojo/issues/25)) ([0113498](https://github.com/tensorplex-labs/dojo/commit/0113498daf01fe2260582792efd3d19e4e985b2d))
+
+## [1.1.6](https://github.com/tensorplex-labs/dojo/compare/v1.1.5...v1.1.6) (2024-10-22)
+
+### Bug Fixes
+
+* set weights in separate thread ([#27](https://github.com/tensorplex-labs/dojo/issues/27)) ([af99f93](https://github.com/tensorplex-labs/dojo/commit/af99f93c2184895f805747ed52162329bc90faf5))
+
+## [1.1.5](https://github.com/tensorplex-labs/dojo/compare/v1.1.4...v1.1.5) (2024-10-20)
+
+### Bug Fixes
+
+* gracefully shutdown auto_update ([40240cd](https://github.com/tensorplex-labs/dojo/commit/40240cd15632430febdcdb60638443a5e128c4d0))
+* simplify dojo setup ([2bf0c76](https://github.com/tensorplex-labs/dojo/commit/2bf0c769890bda3e7cb4dadfdc01db8b4c033a13))
+* updated makefile, and auto-update script ([0d20bd4](https://github.com/tensorplex-labs/dojo/commit/0d20bd424fb092099cb8a9f2608046637dae69e5))
+
 ## [1.1.4](https://github.com/tensorplex-labs/dojo/compare/v1.1.3...v1.1.4) (2024-10-17)
 
 ### Bug Fixes

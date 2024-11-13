@@ -1,14 +1,15 @@
 import asyncio
 import copy
 import gc
+import math
 import random
 import time
 import traceback
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from traceback import print_exception
-from typing import List
+from typing import AsyncGenerator, Dict, List
 
 import aiohttp
 import bittensor as bt
@@ -16,16 +17,18 @@ import numpy as np
 import torch
 import wandb
 from bittensor.btlogging import logging as logger
+from bittensor.utils.weight_utils import process_weights_for_netuid
 from fastapi.encoders import jsonable_encoder
 from tenacity import RetryError
 from torch.nn import functional as F
+from websocket import create_connection
 
 import dojo
 from commons.dataset.synthetic import SyntheticAPI
 from commons.exceptions import (
     EmptyScores,
     InvalidMinerResponse,
-    NoNewUnexpiredTasksYet,
+    NoNewExpiredTasksYet,
     SetWeightsFailed,
 )
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
@@ -33,6 +36,7 @@ from commons.objects import ObjectManager
 from commons.orm import ORM
 from commons.scoring import Scoring
 from commons.utils import (
+    _terminal_plot,
     datetime_as_utc,
     get_epoch_time,
     get_new_uuid,
@@ -61,7 +65,9 @@ from dojo.utils.uids import MinerUidSelector, extract_miner_uids, is_miner
 
 class Validator:
     _should_exit: bool = False
-    _alock = asyncio.Lock()
+    _scores_alock = asyncio.Lock()
+    _uids_alock = asyncio.Lock()
+    _request_alock = asyncio.Lock()
     _threshold = 0.1
     _active_miner_uids: set[int] = set()
 
@@ -95,13 +101,13 @@ class Validator:
         logger.info(f"Dendrite: {self.dendrite}")
         # Set up initial scoring weights for validation
         self.scores: torch.Tensor = torch.zeros(
-            self.metagraph.n.item(), dtype=torch.float32
+            len(self.metagraph.hotkeys), dtype=torch.float32
         )
-        self.load_state()
-
         # manually always register and always sync metagraph when application starts
         self.check_registered()
         self.executor = ThreadPoolExecutor(max_workers=2)
+
+        self.load_state()
 
         init_wandb(config=self.config, my_uid=self.uid, wallet=self.wallet)
 
@@ -118,176 +124,6 @@ class Validator:
         await self.dendrite.forward(
             axons=axons, synapse=synapse, deserialize=False, timeout=12
         )
-
-    async def update_score_and_send_feedback(self):
-        while True:
-            await asyncio.sleep(dojo.VALIDATOR_UPDATE_SCORE)
-            logger.info("📝 performing scoring ...")
-            try:
-                validator_hotkeys = [
-                    hotkey
-                    for uid, hotkey in enumerate(self.metagraph.hotkeys)
-                    if not is_miner(self.metagraph, uid)
-                ]
-
-                if get_config().ignore_min_stake:
-                    validator_hotkeys.append(self.wallet.hotkey.ss58_address)
-
-                batch_id = 0
-                # number of tasks to process in a batch
-                batch_size = 10
-                processed_request_ids = []
-
-                # figure out an expire_at cutoff time to determine those requests ready for scoring
-                try:
-                    expire_at = await ORM.get_last_expire_at_cutoff(validator_hotkeys)
-                except ValueError:
-                    logger.warning(
-                        f"No tasks for scoring yet, please wait for tasks to to pass deadline of {dojo.TASK_DEADLINE} seconds"
-                    )
-                    continue
-
-                async for (
-                    task_batch,
-                    has_more_batches,
-                ) in ORM.get_expired_tasks(
-                    validator_hotkeys, batch_size=batch_size, expire_at=expire_at
-                ):
-                    if not has_more_batches:
-                        logger.success(
-                            f"📝 All tasks processed, total batches: {batch_id}, batch size: {batch_size}"
-                        )
-                        gc.collect()
-                        break
-
-                    if not task_batch:
-                        break
-
-                    batch_id += 1
-                    logger.info(
-                        f"📝 Processing batch {batch_id}, batch size: {batch_size}"
-                    )
-                    for task in task_batch:
-                        criteria_to_miner_score, hotkey_to_score = (
-                            Scoring.calculate_score(
-                                criteria_types=task.request.criteria_types,
-                                request=task.request,
-                                miner_responses=task.miner_responses,
-                            )
-                        )
-                        logger.debug(f"📝 Got hotkey to score: {hotkey_to_score}")
-                        logger.debug(
-                            f"📝 Initially had {len(task.miner_responses)} responses from miners, but only {len(hotkey_to_score.keys())} valid responses"
-                        )
-
-                        if not hotkey_to_score:
-                            logger.info(
-                                "📝 Did not manage to generate a dict of hotkey to score"
-                            )
-                            # append it anyways so we can cut off later
-                            processed_request_ids.append(task.request.request_id)
-                            continue
-
-                        await self.update_scores(hotkey_to_scores=hotkey_to_score)
-                        await self.send_scores(
-                            synapse=ScoringResult(
-                                request_id=task.request.request_id,
-                                hotkey_to_scores=hotkey_to_score,
-                            ),
-                            hotkeys=list(hotkey_to_score.keys()),
-                        )
-
-                        async def log_wandb():
-                            # calculate mean across all criteria
-
-                            if (
-                                not criteria_to_miner_score.values()
-                                or not hotkey_to_score
-                            ):
-                                logger.warning(
-                                    "📝 No criteria to miner scores available. Skipping calculating averages for wandb."
-                                )
-                                return
-
-                            mean_weighted_consensus_scores = (
-                                torch.stack(
-                                    [
-                                        miner_scores.consensus.score
-                                        for miner_scores in criteria_to_miner_score.values()
-                                    ]
-                                )
-                                .mean(dim=0)
-                                .tolist()
-                            )
-                            mean_weighted_gt_scores = (
-                                torch.stack(
-                                    [
-                                        miner_scores.ground_truth
-                                        for miner_scores in criteria_to_miner_score.values()
-                                    ]
-                                )
-                                .mean(dim=0)
-                                .tolist()
-                            )
-
-                            logger.info(
-                                f"📝 Mean miner scores across different criteria: consensus shape:{mean_weighted_consensus_scores}, gt shape:{mean_weighted_gt_scores}"
-                            )
-
-                            score_data = {}
-                            # update the scores based on the rewards
-                            score_data["scores_by_hotkey"] = hotkey_to_score
-                            score_data["mean"] = {
-                                "consensus": mean_weighted_consensus_scores,
-                                "ground_truth": mean_weighted_gt_scores,
-                            }
-
-                            dojo_task_to_scores_and_gt = []
-                            for miner_response in task.miner_responses:
-                                if miner_response.dojo_task_id is not None:
-                                    model_to_score_and_gt_map = await ORM.get_scores_and_ground_truth_by_dojo_task_id(
-                                        miner_response.dojo_task_id
-                                    )
-                                    dojo_task_to_scores_and_gt.append(
-                                        {
-                                            miner_response.dojo_task_id: model_to_score_and_gt_map
-                                        }
-                                    )
-
-                            score_data["dojo_task_to_scores_and_gt"] = (
-                                dojo_task_to_scores_and_gt
-                            )
-
-                            wandb_data = jsonable_encoder(
-                                {
-                                    "request_id": task.request.request_id,
-                                    "task": task.request.task_type,
-                                    "criteria": task.request.criteria_types,
-                                    "prompt": task.request.prompt,
-                                    "completions": jsonable_encoder(
-                                        task.request.completion_responses
-                                    ),
-                                    "num_completions": len(
-                                        task.request.completion_responses
-                                    ),
-                                    "scores": score_data,
-                                    "num_responses": len(task.miner_responses),
-                                }
-                            )
-
-                            wandb.log(wandb_data, commit=True)
-
-                        asyncio.create_task(log_wandb())
-
-                        # once we have scored a response, just remove it
-                        processed_request_ids.append(task.request.request_id)
-
-                if processed_request_ids:
-                    await ORM.mark_tasks_processed_by_request_ids(processed_request_ids)
-
-            except Exception:
-                traceback.print_exc()
-                pass
 
     def obfuscate_model_names(
         self, completion_responses: list[CompletionResponses]
@@ -307,7 +143,6 @@ class Validator:
         """Perform a health check periodically to ensure miners are reachable"""
         while True:
             await asyncio.sleep(dojo.VALIDATOR_HEARTBEAT)
-            await self.resync_metagraph()
             try:
                 all_miner_uids = extract_miner_uids(metagraph=self.metagraph)
                 logger.debug(f"Sending heartbeats to {len(all_miner_uids)} miners")
@@ -327,7 +162,7 @@ class Validator:
                     for uid, axon in enumerate(self.metagraph.axons)
                     if axon.hotkey in active_hotkeys
                 ]
-                async with self._alock:
+                async with self._uids_alock:
                     self._active_miner_uids = set(active_uids)
                 logger.debug(
                     f"⬇️ Heartbeats acknowledged by active miners: {sorted(active_uids)}"
@@ -343,58 +178,69 @@ class Validator:
         dendrite: bt.dendrite, axons: List[bt.AxonInfo], synapse: FeedbackRequest
     ) -> list[FeedbackRequest]:
         """Based on the initial synapse, send shuffled ordering of responses so that miners cannot guess ordering of ground truth"""
-        tasks = []
-        for axon in axons:
-            # shuffle synapse Responses
-            shuffled_completions = random.sample(
-                synapse.completion_responses,
-                k=len(synapse.completion_responses),
-            )
+        all_responses = []
+        batch_size = 10
 
-            # Apply obfuscation to each completion's files
-            # TODO re-nable obfuscation
-            # await Validator._obfuscate_completion_files(shuffled_completions)
+        for i in range(0, len(axons), batch_size):
+            batch_axons = axons[i : i + batch_size]
+            tasks = []
 
-            criteria_types = []
-            # ensure criteria options same order as completion_responses
-            for criteria in synapse.criteria_types:
-                if not isinstance(criteria, MultiScoreCriteria):
-                    logger.trace(f"Skipping non multi score criteria: {criteria}")
-                    continue
-                options = [completion.model for completion in shuffled_completions]
-                criteria = MultiScoreCriteria(
-                    options=options,
-                    min=criteria.min,
-                    max=criteria.max,
+            for axon in batch_axons:
+                # shuffle synapse Responses
+                shuffled_completions = random.sample(
+                    synapse.completion_responses,
+                    k=len(synapse.completion_responses),
                 )
-                criteria_types.append(criteria)
 
-            shuffled_synapse = FeedbackRequest(
-                epoch_timestamp=synapse.epoch_timestamp,
-                request_id=synapse.request_id,
-                prompt=synapse.prompt,
-                completion_responses=shuffled_completions,
-                task_type=synapse.task_type,
-                criteria_types=criteria_types,
-                expire_at=synapse.expire_at,
-            )
+                # Apply obfuscation to each completion's files
+                # TODO re-nable obfuscation
+                # await Validator._obfuscate_completion_files(shuffled_completions)
 
-            tasks.append(
-                dendrite.forward(
-                    axons=[axon],
-                    synapse=shuffled_synapse,
-                    deserialize=False,
-                    timeout=12,
+                criteria_types = []
+                # ensure criteria options same order as completion_responses
+                for criteria in synapse.criteria_types:
+                    if not isinstance(criteria, MultiScoreCriteria):
+                        logger.trace(f"Skipping non multi score criteria: {criteria}")
+                        continue
+                    options = [completion.model for completion in shuffled_completions]
+                    criteria = MultiScoreCriteria(
+                        options=options,
+                        min=criteria.min,
+                        max=criteria.max,
+                    )
+                    criteria_types.append(criteria)
+
+                shuffled_synapse = FeedbackRequest(
+                    epoch_timestamp=synapse.epoch_timestamp,
+                    request_id=synapse.request_id,
+                    prompt=synapse.prompt,
+                    completion_responses=shuffled_completions,
+                    task_type=synapse.task_type,
+                    criteria_types=criteria_types,
+                    expire_at=synapse.expire_at,
                 )
+
+                tasks.append(
+                    dendrite.forward(
+                        axons=[axon],
+                        synapse=shuffled_synapse,
+                        deserialize=False,
+                        timeout=12,
+                    )
+                )
+
+            # Gather results for this batch and flatten the list
+            batch_responses = await asyncio.gather(*tasks)
+            flat_batch_responses = [
+                response for sublist in batch_responses for response in sublist
+            ]
+            all_responses.extend(flat_batch_responses)
+
+            logger.info(
+                f"Processed batch {i//batch_size + 1} of {(len(axons)-1)//batch_size + 1}"
             )
 
-        # Gather results and flatten the list
-        nested_responses = await asyncio.gather(*tasks)
-        flat_responses = [
-            response for sublist in nested_responses for response in sublist
-        ]
-
-        return flat_responses
+        return all_responses
 
     @staticmethod
     async def _obfuscate_completion_files(
@@ -419,7 +265,7 @@ class Validator:
                             logger.error(f"Error obfuscating {file.filename}: {e}")
 
     async def get_miner_uids(self, is_external_request: bool, request_id: str):
-        async with self._alock:
+        async with self._uids_alock:
             if is_external_request:
                 sel_miner_uids = [
                     uid
@@ -532,9 +378,6 @@ class Validator:
                 miner_hotkey = (
                     miner_response.axon.hotkey if miner_response.axon else "??"
                 )
-                logger.debug(
-                    f"Received response from miner: {miner_hotkey, miner_response.dojo_task_id}"
-                )
                 # map obfuscated model names back to the original model names
                 real_model_ids = []
 
@@ -555,18 +398,13 @@ class Validator:
                     logger.debug(f"Miner {miner_hotkey} must provide the dojo task id")
                     continue
 
-                logger.debug(
-                    f"Successfully mapped obfuscated model names for {miner_hotkey}"
-                )
-
                 # update the miner response with the real model ids
                 valid_miner_responses.append(miner_response)
         except Exception as e:
             logger.error(f"Failed to map obfuscated model to original model: {e}")
             pass
 
-        logger.info(f"⬇️ Got {len(valid_miner_responses)} valid responses")
-
+        logger.info(f"⬇️ Received {len(valid_miner_responses)} valid responses")
         if valid_miner_responses is None or len(valid_miner_responses) == 0:
             logger.info("No valid miner responses to process... skipping")
             return
@@ -602,17 +440,20 @@ class Validator:
     async def run(self):
         logger.info(f"Validator starting at block: {str(self.block)}")
 
-        await self.resync_metagraph()
         # This loop maintains the validator's operations until intentionally stopped.
         try:
             while True:
                 try:
-                    await self.send_request()
+                    async with self._request_alock:
+                        await self.send_request()
 
                     # # Check if we should exit.
                     if self._should_exit:
                         logger.debug("Validator should stop...")
                         break
+
+                    # Clear the dendrite synapse history to avoid memory leak.
+                    self.dendrite.synapse_history = []
 
                     # Sync metagraph and potentially set weights.
                     await self.sync()
@@ -650,12 +491,6 @@ class Validator:
 
         logger.info("Attempting to set weights")
 
-        safe_uids = self.metagraph.uids
-        if isinstance(self.metagraph.uids, np.ndarray):
-            safe_uids = torch.from_numpy(safe_uids).to("cpu")
-        elif isinstance(self.metagraph.uids, torch.Tensor):
-            pass
-
         # ensure sum = 1
         normalized_weights = F.normalize(self.scores.cpu(), p=1, dim=0)
 
@@ -665,19 +500,62 @@ class Validator:
         elif isinstance(normalized_weights, torch.Tensor):
             pass
 
-        min_allowed_weights = self.subtensor.min_allowed_weights(self.config.netuid)
-        max_weight_limit = self.subtensor.max_weight_limit(self.config.netuid)
-        logger.debug(f"min_allowed_weights: {min_allowed_weights}")
-        logger.debug(f"max_weight_limit: {max_weight_limit}")
+        # we don't read uids from metagraph because polling metagraph happens
+        # faster than calling set_weights and self.scores is already
+        # based on uids, adjusted based on metagraph during `resync_metagraph`
+        uids = torch.tensor(list(range(len(safe_normalized_weights))))
 
-        logger.debug("Attempting to set weights")
-        logger.debug(f"weights: {safe_normalized_weights}")
-        logger.debug(f"uids: {safe_uids}")
-        await self.set_weights_in_thread(safe_uids, safe_normalized_weights)
+        (
+            final_uids,
+            final_weights,
+        ) = process_weights_for_netuid(  # type: ignore
+            uids=uids.numpy(),
+            weights=safe_normalized_weights.numpy(),
+            netuid=self.config.netuid,  # type: ignore
+            subtensor=self.subtensor,
+            metagraph=self.metagraph,
+        )
+
+        if isinstance(final_weights, np.ndarray):
+            final_weights = torch.from_numpy(final_weights).to("cpu")
+        if isinstance(final_uids, np.ndarray):
+            final_uids = torch.from_numpy(final_uids).to("cpu")
+
+        logger.debug(f"weights:\n{safe_normalized_weights}")
+        logger.debug(f"uids:\n{uids}")
+
+        _terminal_plot(
+            f"pre-processed weights, block: {self.block}",
+            safe_normalized_weights.numpy(),
+        )
+
+        logger.debug(f"final weights:\n{final_weights}")
+        logger.debug(f"final uids:\n{final_uids}")
+
+        _terminal_plot(
+            f"final weights, block: {self.block}",
+            final_weights.numpy(),
+        )
+
+        # dependent on underlying `set_weights` call
+        try:
+            result, message = await asyncio.wait_for(
+                self._set_weights(final_uids, final_weights), timeout=90
+            )
+            if not result:
+                logger.error(f"Failed to set weights: {message}")
+                return
+
+            logger.success(f"Set weights successfully: {message}")
+        except asyncio.TimeoutError:
+            logger.error("Setting weights timed out after 90 seconds")
+            return
+
         return
 
-    async def set_weights_in_thread(self, uids: torch.Tensor, weights: torch.Tensor):
-        """Wrapper function to set weights in a separate thread
+    async def _set_weights(self, uids: torch.Tensor, weights: torch.Tensor):
+        """Wrapper function to set weights so we can ensure set weights happens
+        within a timeout.
 
         Args:
             uids (torch.Tensor): uids to set weights for
@@ -686,78 +564,54 @@ class Validator:
         Returns:
             tuple[bool, str]: Returns the result of _set_weights function
         """
-        logger.trace("Attempting to set weights in another thread")
 
-        def _set_weights() -> tuple[bool, str]:
-            """LOCAL FUNCTION to set weights, we pass in a lock because of how
-            we are calling this function from the main thread, sending it
-            to a separate thread to avoid blocking the main thread, so the lock
-            MUST be acquired by the separate thread.
+        max_attempts = 5
+        attempt = 0
+        result = False
+        while attempt < max_attempts and not result:
+            try:
+                logger.debug(
+                    f"Set weights attempt {attempt+1}/{max_attempts} at block: {self.block},time: {time.time()}"
+                )
 
+                # Disable this for now to check validator hanging issue
+                # try:
+                #     await asyncio.wait_for(
+                #         self._ensure_subtensor_ws_connected(), timeout=10
+                #     )
+                # except asyncio.TimeoutError:
+                #     pass
 
-            Args:
-                lock (threading.Lock): Lock parameter passed to separate thread
+                result, message = self.subtensor.set_weights(
+                    wallet=self.wallet,
+                    netuid=self.config.netuid,  # type: ignore
+                    uids=uids.tolist(),
+                    weights=weights.tolist(),
+                    wait_for_finalization=False,
+                    wait_for_inclusion=False,
+                    version_key=self.spec_version,
+                    max_retries=1,
+                )
+                if result:
+                    logger.success(f"Set weights successfully: {message}")
+                    return result, message
 
-            Returns:
-                tuple[bool, str]: Returns a tuple of a boolean and a string
-                - boolean: True if weights were set successfully, False otherwise
-                - string: Message indicating the result of set weights
-            """
-            max_attempts = 5
-            attempt = 0
-            while attempt < max_attempts:
-                try:
-                    logger.trace(f"Set weights attempt {attempt+1}/{max_attempts}")
-                    result, message = self.subtensor.set_weights(
-                        wallet=self.wallet,
-                        netuid=self.config.netuid,  # type: ignore
-                        uids=uids.tolist(),
-                        weights=weights.tolist(),
-                        wait_for_finalization=False,
-                        wait_for_inclusion=False,
-                        version_key=self.spec_version,
-                        max_retries=1,
-                    )
-                    if result:
-                        logger.success(f"Set weights successfully: {message}")
-                        return result, message
+                raise SetWeightsFailed(f"Failed to set weights with message:{message}")
 
-                    logger.warning(
-                        f"Failed to set weights with attempt {attempt+1}/{max_attempts} due to: {message}"
-                    )
-                    raise SetWeightsFailed(
-                        f"Failed to set weights with message:{message}"
-                    )
+            except Exception:
+                logger.warning(
+                    f"Failed to set weights with attempt {attempt+1}/{max_attempts} due to: {message}"
+                )
 
-                except Exception as e:
-                    attempt += 1
-                    logger.warning(f"Attempt {attempt} failed: {e}")
-                    if attempt == max_attempts:
-                        logger.error("Max attempts reached. Could not set weights.")
-                        return False, "Max attempts reached"
+                if attempt == max_attempts:
+                    logger.error("Max attempts reached. Could not set weights.")
+                    return False, "Max attempts reached"
 
-                    self._wait_set_weights()
+                await asyncio.sleep(12)
+            finally:
+                attempt += 1
 
-            return False, "Max attempts reached"
-
-        logger.trace("Submitting callable func to executor")
-
-        async with self._alock:
-            future = self.loop.run_in_executor(self.executor, _set_weights)
-            result = await future
-        return result
-
-    def _wait_set_weights(self):
-        """Waits for 1 block by calling the block number. Otherwise waits until 24s"""
-        logger.trace("Waiting for 1 block before setting weights")
-        current_block = self.block
-        start_time = time.time()
-        while self.block == current_block:
-            # long max wait before retrying, up to 2 blocks
-            if time.time() - start_time > 2 * 12:
-                logger.warning("Waited for 1 block before setting weights, retrying...")
-                break
-            time.sleep(3)
+        return False, "Max attempts reached"
 
     async def resync_metagraph(self):
         """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
@@ -783,10 +637,10 @@ class Validator:
         # If so, we need to add new hotkeys and moving averages.
         if len(previous_metagraph.hotkeys) < len(self.metagraph.hotkeys):
             # Update the size of the moving average scores.
-            new_moving_average = torch.zeros(self.metagraph.n)
+            new_moving_average = torch.zeros(len(self.metagraph.hotkeys))
             min_len = min(len(previous_metagraph.hotkeys), len(self.scores))
             new_moving_average[:min_len] = self.scores[:min_len]
-            async with self._alock:
+            async with self._scores_alock:
                 self.scores = torch.clamp(new_moving_average, min=0.0)
 
     async def update_scores(self, hotkey_to_scores: dict[str, float]):
@@ -804,32 +658,47 @@ class Validator:
 
         # Compute forward pass rewards, assumes uids are mutually exclusive.
         # scores dimensions might have been updated after resyncing... len(uids) != len(self.scores)
-        rewards = torch.zeros((len(self.metagraph.axons),))
-        neuron_hotkeys: List[str] = [neuron.hotkey for neuron in self.metagraph.neurons]
+        rewards = torch.zeros((len(self.metagraph.hotkeys),))
+        existing_scores = torch.zeros((len(self.metagraph.hotkeys),))
         for index, (key, value) in enumerate(hotkey_to_scores.items()):
             # handle nan values
             if nan_value_indices[index]:
                 rewards[key] = 0.0  # type: ignore
             # search metagraph for hotkey and grab uid
             try:
-                uid = neuron_hotkeys.index(key)
+                uid = self.metagraph.hotkeys.index(key)
             except ValueError:
-                logger.warning(
-                    "Old hotkey found from previous metagraph, skip setting weights"
-                )
+                logger.warning("Old hotkey found from previous metagraph")
                 continue
 
             logger.debug(f"Score for hotkey {key} is {value}")
             rewards[uid] = value
+
+            # self.scores is a tensor already based on uids
+            # use this logic to ensure
+            # 1. rewards and existing_scores are the same length
+            # 2. if hotkey is deregistered, the new participant will not benefit from existing scores
+            if uid < len(self.scores):
+                existing_scores[uid] = self.scores[uid]
 
         logger.debug(f"Rewards: {rewards}")
         # Update scores with rewards produced by this step.
         # shape: [ metagraph.n ]
         alpha: float = self.config.neuron.moving_average_alpha
         # don't acquire lock here because we're already acquiring it in the CALLER
-        async with self._alock:
-            self.scores = alpha * rewards + (1 - alpha) * self.scores
+        async with self._scores_alock:
+            _terminal_plot(
+                f"scores before update, block: {self.block}", self.scores.numpy()
+            )
+            assert (
+                existing_scores.shape == rewards.shape
+            ), "Scores and rewards must be the same length when calculating moving average"
+
+            self.scores = alpha * rewards + (1 - alpha) * existing_scores
             self.scores = torch.clamp(self.scores, min=0.0)
+            _terminal_plot(
+                f"scores after update, block: {self.block}", self.scores.numpy()
+            )
         logger.debug(f"Updated scores: {self.scores}")
 
     async def save_state(
@@ -869,8 +738,25 @@ class Validator:
                 return None
 
             logger.success(f"Loaded validator state: {scores=}")
-            async with self._alock:
-                self.scores = torch.clamp(scores, 0.0)
+            async with self._scores_alock:
+                # if metagraph has more hotkeys than scores, adjust length
+                if len(scores) < len(self.metagraph.hotkeys):
+                    logger.warning(
+                        "Scores state is less than current metagraph hotkeys length, adjusting length. This should only happen when subnet is not at max UIDs yet."
+                    )
+                    # length adjusted scores
+                    adjusted_scores = torch.zeros(len(self.metagraph.hotkeys))
+                    adjusted_scores[: len(scores)] = scores
+                    logger.info(
+                        f"Load state: adjusted scores shape from {scores.shape} to {adjusted_scores.shape}"
+                    )
+                    self.scores = torch.clamp(adjusted_scores, 0.0)
+                else:
+                    self.scores = torch.clamp(scores, 0.0)
+
+                _terminal_plot(
+                    f"scores on load, block: {self.block}", self.scores.numpy()
+                )
 
         except Exception as e:
             logger.error(
@@ -917,9 +803,6 @@ class Validator:
             )
 
             if response and response[0]:
-                logger.debug(
-                    f"Received task result from miner {miner_hotkey} for task {task_id}, {response}"
-                )
                 return response[0].task_results
             else:
                 logger.debug(
@@ -930,107 +813,6 @@ class Validator:
         except Exception as e:
             logger.error(f"Error fetching task result from miner {miner_hotkey}: {e}")
             return []
-
-    async def monitor_task_completions(self):
-        while not self._should_exit:
-            try:
-                validator_hotkeys = [
-                    hotkey
-                    for uid, hotkey in enumerate(self.metagraph.hotkeys)
-                    if not is_miner(self.metagraph, uid)
-                ]
-
-                if get_config().ignore_min_stake:
-                    validator_hotkeys.append(self.wallet.hotkey.ss58_address)
-
-                batch_id = 0
-                batch_size = 10
-                # use current time as cutoff so we get only unexpired tasks
-                now = datetime_as_utc(datetime.now(timezone.utc))
-                async for task_batch, has_more_batches in ORM.get_expired_tasks(
-                    validator_hotkeys=validator_hotkeys,
-                    batch_size=batch_size,
-                    expire_at=now,
-                ):
-                    if not has_more_batches:
-                        logger.success(
-                            "No more unexpired tasks found for processing, exiting task monitoring."
-                        )
-                        gc.collect()
-                        break
-
-                    if not task_batch:
-                        continue
-
-                    batch_id += 1
-                    logger.info(f"Monitoring task completions, batch id: {batch_id}")
-
-                    for task in task_batch:
-                        request_id = task.request.request_id
-                        miner_responses = task.miner_responses
-
-                        obfuscated_to_real_model_id = await ORM.get_real_model_ids(
-                            request_id
-                        )
-
-                        for miner_response in miner_responses:
-                            if (
-                                not miner_response.axon
-                                or not miner_response.axon.hotkey
-                                or not miner_response.dojo_task_id
-                            ):
-                                raise InvalidMinerResponse(
-                                    f"""Missing hotkey, task_id, or axon:
-                                    axon: {miner_response.axon}
-                                    hotkey: {miner_response.axon.hotkey}
-                                    task_id: {miner_response.dojo_task_id}"""
-                                )
-
-                            miner_hotkey = miner_response.axon.hotkey
-                            task_id = miner_response.dojo_task_id
-                            task_results = await asyncio.create_task(
-                                self._get_task_results_from_miner(miner_hotkey, task_id)
-                            )
-
-                            if not task_results and not len(task_results) > 0:
-                                logger.debug(
-                                    f"Task ID: {task_id} by miner: {miner_hotkey} has not been completed yet or no task results."
-                                )
-                                continue
-
-                            # Process task result
-                            model_id_to_avg_rank, model_id_to_avg_score = (
-                                self._calculate_averages(
-                                    task_results, obfuscated_to_real_model_id
-                                )
-                            )
-
-                            # Update the response with the new ranks and scores
-                            for completion in miner_response.completion_responses:
-                                model_id = completion.model
-                                if model_id in model_id_to_avg_rank:
-                                    completion.rank_id = int(
-                                        model_id_to_avg_rank[model_id]
-                                    )
-                                if model_id in model_id_to_avg_score:
-                                    completion.score = model_id_to_avg_score[model_id]
-
-                            # Update miner responses in the database
-                            success = await ORM.update_miner_completions_by_request_id(
-                                request_id, task.miner_responses
-                            )
-
-                            logger.info(
-                                f"Updating task {request_id} with miner's completion data, success ? {success}"
-                            )
-                        await asyncio.sleep(0.2)
-            except NoNewUnexpiredTasksYet as e:
-                logger.info(f"No new unexpired tasks yet: {e}")
-            except Exception as e:
-                traceback.print_exc()
-                logger.error(f"Error during Dojo task monitoring {str(e)}")
-                pass
-            await asyncio.sleep(dojo.DOJO_TASK_MONITORING)
 
     @staticmethod
     def _calculate_averages(
@@ -1111,3 +893,456 @@ class Validator:
     @property
     def block(self):
         return ttl_get_block(self.subtensor)
+
+    async def _ensure_subtensor_ws_connected(
+        self, max_attempts: int = 5, sleep: int = 3
+    ):
+        if not self.subtensor.substrate.websocket:
+            logger.warning("Substrate websocket not initialized, skipping connection")
+            return False
+
+        attempts = 0
+        while (
+            not self.subtensor.substrate.websocket.connected and attempts < max_attempts
+        ):
+            try:
+                self.subtensor.substrate.websocket = create_connection(
+                    url=self.subtensor.substrate.url,  # type: ignore
+                    timeout=10,
+                    **self.subtensor.substrate.ws_options,
+                )
+                if self.subtensor.substrate.websocket.connected:
+                    logger.debug(
+                        f"Successfully connected to substrate websocket on attempt {attempts}"
+                    )
+                    return True
+                else:
+                    await asyncio.sleep(sleep)
+            finally:
+                attempts += 1
+
+        if not self.subtensor.substrate.websocket.connected:
+            logger.error(
+                "Failed to connect to substrate websocket after maximum attempts"
+            )
+            return False
+
+        logger.debug("Substrate websocket is already connected")
+        return True
+
+    # ---------------------------------------------------------------------------- #
+    #                         VALIDATOR CORE FUNCTIONS                             #
+    # ---------------------------------------------------------------------------- #
+    async def update_score_and_send_feedback(self):
+        while True:
+            await asyncio.sleep(dojo.VALIDATOR_UPDATE_SCORE)
+            # for each hotkey, a list of scores from all tasks being scored
+            hotkey_to_all_scores = defaultdict(list)
+            try:
+                validator_hotkeys: List[str] = self._get_validator_hotkeys()
+
+                # Grab tasks that were expired TASK_DEADLINE duration ago
+                expire_from = (
+                    datetime_as_utc(datetime.now(timezone.utc))
+                    - timedelta(seconds=dojo.TASK_DEADLINE)
+                    - timedelta(hours=2)
+                )
+                expire_to = datetime_as_utc(datetime.now(timezone.utc)) - timedelta(
+                    seconds=dojo.TASK_DEADLINE
+                )
+                logger.debug(
+                    f"Updating with expire_from: {expire_from} and expire_to: {expire_to}"
+                )
+
+                # Get latest task completions before scoring
+                await self.update_task_completions(
+                    validator_hotkeys=validator_hotkeys,
+                    expire_from=expire_from,
+                    expire_to=expire_to,
+                )
+
+                logger.info("📝 performing scoring ...")
+                processed_request_ids = []
+
+                batch_size = 10
+                async for task_batch in self._get_task_batches(
+                    validator_hotkeys, batch_size, expire_from, expire_to
+                ):
+                    if not task_batch:
+                        continue
+
+                    for task in task_batch:
+                        processed_id, hotkey_to_score = await self._score_task(task)
+                        if processed_id:
+                            processed_request_ids.append(processed_id)
+                        for hotkey, score in hotkey_to_score.items():
+                            hotkey_to_all_scores[hotkey].append(score)
+
+                if processed_request_ids:
+                    await ORM.mark_tasks_processed_by_request_ids(processed_request_ids)
+
+                logger.success(
+                    f"📝 All tasks processed, total tasks: {len(processed_request_ids)}"
+                )
+
+                # average scores across all tasks being scored by this trigger to update_scores
+                # so miners moving average decay is lower and we incentivise quality > quantity
+                final_hotkey_to_score = {
+                    hotkey: sum(scores) / len(scores)
+                    for hotkey, scores in hotkey_to_all_scores.items()
+                    if scores
+                }
+                logger.debug(
+                    f"📝 Got hotkey to score across all tasks between expire_at from:{expire_from} and expire_at to:{expire_to}: {final_hotkey_to_score}"
+                )
+                await self.update_scores(hotkey_to_scores=final_hotkey_to_score)
+
+            except Exception:
+                traceback.print_exc()
+                pass
+            finally:
+                gc.collect()
+
+    async def update_task_completions(
+        self, validator_hotkeys: List[str], expire_from: datetime, expire_to: datetime
+    ) -> None:
+        try:
+            logger.info("Updating Dojo task completions...")
+            batch_size: int = 10
+
+            all_miner_responses = []
+            all_request_ids = []
+
+            async for task_batch in self._get_task_batches(
+                validator_hotkeys, batch_size, expire_from, expire_to
+            ):
+                if not task_batch:
+                    continue
+
+                for task in task_batch:
+                    request_id = task.request.request_id
+                    miner_responses = await self._update_task(task)
+                    all_miner_responses.extend(miner_responses)
+                    all_request_ids.append(request_id)
+
+                    if len(all_miner_responses) >= batch_size:
+                        await self._update_miner_completions_batch(
+                            all_request_ids, all_miner_responses
+                        )
+                        all_miner_responses = []
+                        all_request_ids = []
+
+            # Process any remaining responses
+            if all_miner_responses:
+                await self._update_miner_completions_batch(
+                    all_request_ids, all_miner_responses
+                )
+
+        except NoNewExpiredTasksYet as e:
+            logger.info(f"No new expired tasks yet: {e}")
+        except Exception as e:
+            logger.error(f"Error during Dojo task monitoring: {str(e)}")
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+
+    # ---------------------------------------------------------------------------- #
+    #                         VALIDATOR HELPER FUNCTIONS                           #
+    # ---------------------------------------------------------------------------- #
+    def _get_validator_hotkeys(self) -> List[str]:
+        """Get the hotkeys of the validators in the metagraph.
+
+        Returns a list of validator hotkeys.
+        """
+        validator_hotkeys: List[str] = [
+            hotkey
+            for uid, hotkey in enumerate(self.metagraph.hotkeys)
+            if not is_miner(self.metagraph, uid)
+        ]
+        if get_config().ignore_min_stake:
+            validator_hotkeys.append(self.wallet.hotkey.ss58_address)
+        return validator_hotkeys
+
+    async def _get_task_batches(
+        self,
+        validator_hotkeys: list[str],
+        batch_size: int,
+        expire_from: datetime,
+        expire_to: datetime,
+    ) -> AsyncGenerator[List[DendriteQueryResponse], None]:
+        """Get task in batches from the database"""
+        async for task_batch, has_more_batches in ORM.get_expired_tasks(
+            validator_hotkeys=validator_hotkeys,
+            batch_size=batch_size,
+            expire_from=expire_from,
+            expire_to=expire_to,
+        ):
+            if not has_more_batches:
+                logger.success(
+                    "No more unexpired tasks found for processing, exiting task monitoring."
+                )
+                gc.collect()
+                break
+            yield task_batch
+
+    async def _update_task(self, task: DendriteQueryResponse) -> List[FeedbackRequest]:
+        """
+        Returns a list of updated miner responses
+        """
+        request_id: str = task.request.request_id
+        obfuscated_to_real_model_id: Dict[str, str] = await ORM.get_real_model_ids(
+            request_id
+        )
+
+        updated_miner_responses: List[FeedbackRequest] = []
+
+        batch_size = 30
+        num_batches = math.ceil(len(task.miner_responses) / batch_size)
+        for i in range(0, len(task.miner_responses), batch_size):
+            safe_lim = min(i + batch_size, len(task.miner_responses))
+            batch = task.miner_responses[i:safe_lim]
+
+            logger.debug(f"Processing batch {i//batch_size + 1} of {num_batches}")
+
+            tasks = [
+                self._update_miner_response(miner_response, obfuscated_to_real_model_id)
+                for miner_response in batch
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for result in results:
+                if result is None:
+                    pass
+                elif isinstance(result, FeedbackRequest):
+                    updated_miner_responses.append(result)
+                elif isinstance(result, InvalidMinerResponse):
+                    logger.error(f"Invalid miner response: {result}")
+                elif isinstance(result, Exception):
+                    logger.error(f"Unexpected error: {result}")
+
+        logger.success(
+            f"Completed processing {len(updated_miner_responses)} miner responses in {num_batches} batches"
+        )
+        return updated_miner_responses
+
+    async def _update_miner_response(
+        self,
+        miner_response: FeedbackRequest,
+        obfuscated_to_real_model_id: Dict[str, str],
+    ) -> FeedbackRequest | None:
+        """
+        Gets task results from a miner. Calculates the average across all task results.
+
+        If no task results, return None. Else append it to miner completion response.
+        """
+        if (
+            not miner_response.axon
+            or not miner_response.axon.hotkey
+            or not miner_response.dojo_task_id
+        ):
+            raise InvalidMinerResponse(
+                f"""Missing hotkey, task_id, or axon:
+                axon: {miner_response.axon}
+                hotkey: {miner_response.axon.hotkey}
+                task_id: {miner_response.dojo_task_id}"""
+            )
+
+        miner_hotkey = miner_response.axon.hotkey
+        task_id = miner_response.dojo_task_id
+        task_results = await self._get_task_results_from_miner(miner_hotkey, task_id)
+
+        if not task_results:
+            return None
+
+        model_id_to_avg_rank, model_id_to_avg_score = self._calculate_averages(
+            task_results, obfuscated_to_real_model_id
+        )
+
+        for completion in miner_response.completion_responses:
+            model_id = completion.model
+            if model_id in model_id_to_avg_rank:
+                completion.rank_id = int(model_id_to_avg_rank[model_id])
+            if model_id in model_id_to_avg_score:
+                completion.score = model_id_to_avg_score[model_id]
+
+        return miner_response
+
+    async def _update_miner_completions_batch(
+        self,
+        request_ids: List[str],
+        miner_responses: List[FeedbackRequest],
+        max_retries: int = 20,
+    ) -> None:
+        """
+        Update the miner completions in the database in batches
+
+        If there are any failed updates, retry using failed_indices.
+        """
+        remaining_responses = miner_responses
+        remaining_request_ids = request_ids
+
+        for attempt in range(max_retries):
+            try:
+                (
+                    success,
+                    failed_indices,
+                ) = await ORM.update_miner_completions_by_request_id(
+                    remaining_responses
+                )
+                if success:
+                    logger.success(
+                        f"Successfully updated {len(remaining_responses)} miner completions for {len(remaining_request_ids)} requests"
+                    )
+                    return
+                else:
+                    if attempt == max_retries - 1:
+                        logger.error(
+                            f"Failed to update {len(failed_indices)} miner completions after {max_retries} attempts"
+                        )
+                    else:
+                        logger.warning(
+                            f"Retrying {len(failed_indices)} failed updates, attempt {attempt+2}/{max_retries}"
+                        )
+                        remaining_responses = [
+                            remaining_responses[i] for i in failed_indices
+                        ]
+                        remaining_request_ids = [
+                            remaining_request_ids[i] for i in failed_indices
+                        ]
+                        await asyncio.sleep(2**attempt)
+
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(
+                        f"Error updating miner completions batch after {max_retries} attempts: {e}"
+                    )
+                else:
+                    logger.warning(f"Error during attempt {attempt+1}, retrying: {e}")
+                    await asyncio.sleep(2**attempt)
+
+    async def _score_task(self, task: DendriteQueryResponse) -> tuple[str, dict]:
+        """Process a task and calculate the scores for the miner responses"""
+        if not task.miner_responses:
+            logger.warning("📝 No miner responses, skipping task")
+            return task.request.request_id, {}
+
+        criteria_to_miner_score, hotkey_to_score = {}, {}
+        try:
+            criteria_to_miner_score, hotkey_to_score = Scoring.calculate_score(
+                criteria_types=task.request.criteria_types,
+                request=task.request,
+                miner_responses=task.miner_responses,
+            )
+        except Exception as e:
+            logger.error(
+                f"📝 Error occurred while calculating scores: {e}. Request ID: {task.request.request_id}"
+            )
+            return task.request.request_id, {}
+
+        logger.debug(f"📝 Got hotkey to score: {hotkey_to_score}")
+        logger.debug(
+            f"📝 Received {len(task.miner_responses)} responses from miners. "
+            f"Processed {len(hotkey_to_score.keys())} responses for scoring."
+        )
+
+        if not hotkey_to_score:
+            logger.info("📝 Did not manage to generate a dict of hotkey to score")
+            return task.request.request_id, {}
+
+        await self.send_scores(
+            synapse=ScoringResult(
+                request_id=task.request.request_id,
+                hotkey_to_scores=hotkey_to_score,
+            ),
+            hotkeys=list(hotkey_to_score.keys()),
+        )
+
+        asyncio.create_task(
+            self._log_wandb(task, criteria_to_miner_score, hotkey_to_score)
+        )
+
+        return task.request.request_id, hotkey_to_score
+
+    async def _log_wandb(
+        self,
+        task: DendriteQueryResponse,
+        criteria_to_miner_score: dict,
+        hotkey_to_score: dict,
+    ):
+        """Log the task results to wandb for visualization."""
+        if not criteria_to_miner_score.values() or not hotkey_to_score:
+            logger.warning(
+                "📝 No criteria to miner scores available. Skipping calculating averages for wandb."
+            )
+            return
+
+        mean_weighted_consensus_scores = (
+            torch.stack(
+                [
+                    miner_scores.consensus.score
+                    for miner_scores in criteria_to_miner_score.values()
+                ]
+            )
+            .mean(dim=0)
+            .tolist()
+        )
+
+        mean_weighted_gt_scores = (
+            torch.stack(
+                [
+                    miner_scores.ground_truth
+                    for miner_scores in criteria_to_miner_score.values()
+                ]
+            )
+            .mean(dim=0)
+            .tolist()
+        )
+
+        logger.info(
+            f"📝 Mean miner scores across different criteria: consensus shape:{mean_weighted_consensus_scores}, gt shape:{mean_weighted_gt_scores}"
+        )
+
+        score_data = {
+            "scores_by_hotkey": hotkey_to_score,
+            "mean": {
+                "consensus": mean_weighted_consensus_scores,
+                "ground_truth": mean_weighted_gt_scores,
+            },
+            "hotkey_to_dojo_task_scores_and_gt": await self._get_dojo_task_scores_and_gt(
+                task.miner_responses
+            ),
+        }
+
+        wandb_data = jsonable_encoder(
+            {
+                "request_id": task.request.request_id,
+                "task": task.request.task_type,
+                "criteria": task.request.criteria_types,
+                "prompt": task.request.prompt,
+                "completions": jsonable_encoder(task.request.completion_responses),
+                "num_completions": len(task.request.completion_responses),
+                "scores": score_data,
+                "num_responses": len(task.miner_responses),
+            }
+        )
+
+        wandb.log(wandb_data, commit=True)
+
+    async def _get_dojo_task_scores_and_gt(
+        self, miner_responses: List[FeedbackRequest]
+    ):
+        """Get the scores and ground truth for each miner response"""
+        hotkey_to_dojo_task_scores_and_gt = []
+        for miner_response in miner_responses:
+            if miner_response.dojo_task_id is not None:
+                model_to_score_and_gt_map = (
+                    await ORM.get_scores_and_ground_truth_by_dojo_task_id(
+                        miner_response.dojo_task_id
+                    )
+                )
+                hotkey_to_dojo_task_scores_and_gt.append(
+                    {
+                        "hotkey": miner_response.axon.hotkey,
+                        "dojo_task_id": miner_response.dojo_task_id,
+                        "scores_and_gt": model_to_score_and_gt_map,
+                    }
+                )
+        return hotkey_to_dojo_task_scores_and_gt

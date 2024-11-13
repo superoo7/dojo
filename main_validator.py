@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     logger.info("Performing shutdown tasks...")
     validator._should_exit = True
     validator.executor.shutdown(wait=True)
+    validator.subtensor.substrate.close()
     wandb.finish()
     await validator.save_state()
     await SyntheticAPI.close_session()
@@ -55,7 +56,6 @@ async def main():
         asyncio.create_task(validator.log_validator_status()),
         asyncio.create_task(validator.run()),
         asyncio.create_task(validator.update_score_and_send_feedback()),
-        asyncio.create_task(validator.monitor_task_completions()),
         asyncio.create_task(validator.send_heartbeats()),
     ]
 
