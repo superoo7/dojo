@@ -50,7 +50,7 @@ class MinerSim(Miner):
             redis_key = f"feedback:{synapse.request_id}"
             await self.redis_client.set(
                 redis_key,
-                json.dumps(synapse),
+                synapse.model_dump_json(),
                 ex=36000  # expire after 10 hours
             )
             logger.info(f"Stored feedback request {synapse.request_id}")
