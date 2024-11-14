@@ -94,7 +94,7 @@ class MinerSim(Miner):
                             Result(
                                 type=feedback_request.criteria_types[0].type,
                                 value={
-                                    k: (v / (10-1)) * (100-1) + 1 
+                                    k: int((v / (10-1)) * (100-1) + 1)
                                     for k, v in feedback_request.ground_truth.items()
                                 }
                             )
