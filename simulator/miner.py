@@ -102,6 +102,7 @@ class MinerSim(Miner):
                 ]
 
                 synapse.task_results = task_results
+                logger.info(f"TaskResultRequest: {synapse}")
 
                 self.redis_client.delete(redis_key)
                 logger.debug(f"Processed task result for task {synapse.task_id}")
