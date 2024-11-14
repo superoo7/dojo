@@ -12,6 +12,7 @@ from dojo.protocol import (
 from commons.utils import get_new_uuid
 import json
 from datetime import datetime, timezone
+import random
 
 class MinerSim(Miner):
     def __init__(self):
@@ -94,7 +95,7 @@ class MinerSim(Miner):
                             Result(
                                 type=feedback_request.criteria_types[0].type,
                                 value={
-                                    k: int((v / (10-1)) * (100-1) + 1)
+                                    k: int(((int(v + random.uniform(-0.5, 0.5))) / (10-1)) * (100-1) + 1)
                                     for k, v in feedback_request.ground_truth.items()
                                 }
                             )
