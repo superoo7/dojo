@@ -93,7 +93,10 @@ class MinerSim(Miner):
                         result_data=[
                             Result(
                                 type=feedback_request.criteria_types[0].type,
-                                value=feedback_request.ground_truth
+                                value={
+                                    k: (v / (10-1)) * (100-1) + 1 
+                                    for k, v in feedback_request.ground_truth.items()
+                                }
                             )
                         ],
                         worker_id=get_new_uuid(),
