@@ -1,10 +1,11 @@
+import logging
 import traceback
 from typing import List
 import aiohttp
 import dojo
 from commons.dataset.synthetic import SyntheticAPI
 from commons.orm import ORM
-from commons.utils import get_epoch_time, get_new_uuid, set_expire_time
+from commons.utils import get_epoch_time, get_new_uuid, set_expire_time, ttl_get_block
 from dojo.protocol import FeedbackRequest, TaskType, MultiScoreCriteria, DendriteQueryResponse
 from neurons.validator import Validator
 from bittensor.btlogging import logging as logger
@@ -17,6 +18,52 @@ class ValidatorSim(Validator):
     def __init__(self):
         super().__init__()
         logger.info("Starting Validator Simulator")
+        self._last_block = None
+        self._block_check_attempts = 0
+        self.MAX_BLOCK_CHECK_ATTEMPTS = 3
+
+    async def _try_reconnect_subtensor(self):
+        """Attempt to reconnect to the subtensor network"""
+        try:
+            logger.info("Attempting to reconnect to subtensor...")
+            self.subtensor = bt.subtensor(self.subtensor.config)
+            self._block_check_attempts = 0
+            return True
+        except Exception as e:
+            logger.error(f"Failed to reconnect to subtensor: {e}")
+            return False
+
+    @property
+    def block(self):
+        try:
+            self._last_block = ttl_get_block(self.subtensor)
+            self._block_check_attempts = 0
+            return self._last_block
+        except BrokenPipeError:
+            self._block_check_attempts += 1
+            if self._block_check_attempts >= self.MAX_BLOCK_CHECK_ATTEMPTS:
+                logger.error("Multiple failed attempts to get block number, attempting reconnection")
+                if asyncio.get_event_loop().run_until_complete(self._try_reconnect_subtensor()):
+                    return self.block
+            
+            return self._last_block if self._last_block is not None else 0
+        except Exception as e:
+            logger.error(f"Error getting block number: {e}")
+            return self._last_block if self._last_block is not None else 0
+        
+
+    def check_registered(self):
+        new_subtensor = bt.subtensor(self.subtensor.config)
+        if not new_subtensor.is_hotkey_registered(
+            netuid=self.config.netuid,
+            hotkey_ss58=self.wallet.hotkey.ss58_address,
+        ):
+            logger.error(
+                f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}."
+                f" Please register the hotkey using `btcli s register` before trying again"
+            )
+            exit()
+
 
     async def send_request(
             self,
