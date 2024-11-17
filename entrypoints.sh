@@ -25,6 +25,9 @@ if [ "$1" = 'miner' ]; then
     if [ "${SIMULATION}" = "true" ]; then
         EXTRA_ARGS="--simulation"
     fi
+    if [ "${FAST_MODE}" = "true" ]; then
+        EXTRA_ARGS="${EXTRA_ARGS} --fast_mode"
+    fi
 
     python main_miner.py \
     --netuid ${NETUID} \
@@ -52,6 +55,9 @@ if [ "$1" = 'validator' ]; then
     EXTRA_ARGS=""
     if [ "${SIMULATION}" = "true" ]; then
         EXTRA_ARGS="--simulation"
+    fi
+    if [ "${FAST_MODE}" = "true" ]; then
+        EXTRA_ARGS="${EXTRA_ARGS} --fast_mode"
     fi
 
     python main_validator.py \
