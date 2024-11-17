@@ -6,6 +6,7 @@ on:
       - dev
       - staging
       - main
+      - simulation
 
 jobs:
   docker_publish:
