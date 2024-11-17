@@ -14,6 +14,7 @@ import json
 from datetime import datetime, timezone
 import random
 
+
 class MinerSim(Miner):
     def __init__(self):
         super().__init__()
@@ -76,7 +77,7 @@ class MinerSim(Miner):
 
             redis_key = f"feedback:{synapse.task_id}"
             request_data = self.redis_client.get(redis_key)
-            
+
             request_dict = json.loads(request_data) if request_data else None
             feedback_request = FeedbackRequest(**request_dict) if request_dict else None
 
@@ -95,7 +96,7 @@ class MinerSim(Miner):
                             Result(
                                 type=feedback_request.criteria_types[0].type,
                                 value={
-                                    k: int(((int(v + random.uniform(-0.5, 0.5))) / (10-1)) * (100-1) + 1)
+                                    k: int(((int(v + random.uniform(-0.5, 0.5))) / (10 - 1)) * (100 - 1) + 1)
                                     for k, v in feedback_request.ground_truth.items()
                                 }
                             )
