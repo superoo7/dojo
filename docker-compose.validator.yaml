@@ -35,6 +35,9 @@ services:
 
   synthetic-api:
     image: ghcr.io/tensorplex-labs/dojo-synthetic-api:main
+    container_name: synthetic-api
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     env_file:
       - .env.validator
     environment:
@@ -111,6 +114,9 @@ services:
 
   validator:
     image: ghcr.io/tensorplex-labs/dojo:main
+    container_name: validator
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     working_dir: /app
     env_file:
       - .env.validator
@@ -131,3 +137,15 @@ services:
       prisma-setup-vali:
         condition: service_completed_successfully
     logging: *default-logging
+
+  watchtower:
+    image: containrrr/watchtower
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_DEBUG=true # TODO remove after testing
+      - WATCHTOWER_POLL_INTERVAL=60 # TODO change to 1hr after testing
+      - WATCHTOWER_LABEL_ENABLE=true
+      # - WATCHTOWER_LIFECYCLE_HOOKS=true  # Added to enable lifecycle hooks
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
