@@ -32,19 +32,32 @@ class Obfuscator:
 
 
 class HTMLandJSObfuscator(Obfuscator):
-    @staticmethod
-    def generate_random_string(length):
-        return Obfuscator.generate_random_string(length)
-
     @classmethod
     def obfuscate(cls, html_content):
         try:
+            minify_params = {
+                "do_not_minify_doctype": True,
+                "ensure_spec_compliant_unquoted_attribute_values": True,
+                "keep_comments": True,
+                "keep_html_and_head_opening_tags": True,
+                "keep_input_type_text_attr": True,
+                "keep_spaces_between_attributes": True,
+                "keep_ssi_comments": True,
+                "preserve_brace_template_syntax": True,
+                "preserve_chevron_percent_template_syntax": True,
+                "remove_bangs": True,
+                "remove_processing_instructions": True,
+            }
+
+            # Always include keep_closing_tags=True to avoid breaking the HTML structure
+            selected_params = {"keep_closing_tags": True}
+            random_params = random.sample(minify_params.items(), 5)
+            selected_params.update(random_params)
+
             # Use minify to obfuscate the JavaScript code
             minified_content = minify_html.minify(
                 html_content,
-                keep_closing_tags=True,  # Necessary
-                minify_js=True,
-                remove_processing_instructions=True,
+                **selected_params,
             )
 
             # Apply a random number of obfuscation techniques

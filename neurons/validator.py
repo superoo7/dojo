@@ -188,7 +188,9 @@ class Validator:
             for axon in batch_axons:
                 # Create a deep copy of the completion responses for each axon
                 shuffled_completions = copy.deepcopy(synapse.completion_responses)
-                random.shuffle(shuffled_completions)
+                shuffled_completions = random.sample(
+                    shuffled_completions, len(shuffled_completions)
+                )
 
                 # Apply obfuscation to each completion's files
                 await Validator._obfuscate_completion_files(shuffled_completions)
