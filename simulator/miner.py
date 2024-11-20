@@ -46,17 +46,9 @@ class MinerSim(Miner):
     def _configure_simulation(self):
         """Configure simulation parameters with environment variables or defaults."""
         self.response_behaviors = {
-            'normal': float(os.getenv("SIM_NORMAL_RESP_PROB", 0.7)),
-            'partial_response': float(os.getenv("SIM_PARTIAL_RESP_PROB", 0.1)),
+            'normal': float(os.getenv("SIM_NORMAL_RESP_PROB", 0.8)),
             'no_response': float(os.getenv("SIM_NO_RESP_PROB", 0.1)),
             'timeout': float(os.getenv("SIM_TIMEOUT_PROB", 0.1))
-        }
-        
-        self.scoring_strategies = {
-            'accurate': float(os.getenv("SIM_ACCURATE_PROB", 0.4)),
-            'noisy': float(os.getenv("SIM_NOISY_PROB", 0.3)),
-            'biased_high': float(os.getenv("SIM_BIASED_HIGH_PROB", 0.15)),
-            'biased_low': float(os.getenv("SIM_BIASED_LOW_PROB", 0.15))
         }
         
         self.timeout_range = (
@@ -86,7 +78,7 @@ class MinerSim(Miner):
             self.redis_client.set(
                 redis_key,
                 new_synapse.model_dump_json(),
-                ex=86400  # expire after 24 hours
+                ex=36000  # expire after 10 hours
             )
             logger.info(f"Stored feedback request {synapse.request_id}")
 
@@ -129,21 +121,12 @@ class MinerSim(Miner):
                 return synapse
 
             current_time = datetime.now(timezone.utc).isoformat()
-            
-            if behavior == 'partial_response':
-                # Simulate partial results by only scoring some models
-                ground_truth = {
-                    k: v for k, v in feedback_request.ground_truth.items() 
-                    if random.random() > 0.3  # Randomly skip ~30% of models
-                }
-            else:
-                ground_truth = feedback_request.ground_truth
 
             task_results = []
             for criteria_type in feedback_request.criteria_types:
                 result = Result(
                     type=criteria_type.type,
-                    value=self._generate_scores(ground_truth)
+                    value=self._generate_scores(feedback_request.ground_truth)
                 )
                 
                 task_result = TaskResult(
@@ -177,18 +160,9 @@ class MinerSim(Miner):
             weights=list(self.response_behaviors.values())
         )[0]
 
-    def _get_scoring_strategy(self) -> str:
-        """Determine the scoring strategy based on configured probabilities."""
-        return random.choices(
-            list(self.scoring_strategies.keys()), 
-            weights=list(self.scoring_strategies.values())
-        )[0]
-
     def _get_task_status(self, behavior: str) -> str:
         """Determine task status based on behavior."""
-        if behavior == 'partial_response':
-            return random.choice(['PARTIAL', 'COMPLETED_WITH_ERRORS'])
-        elif behavior in ['timeout', 'no_response']:
+        if behavior in ['timeout', 'no_response']:
             return 'FAILED'
         else:
             return 'COMPLETED'
