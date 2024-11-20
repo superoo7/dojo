@@ -35,6 +35,9 @@ services:
 
   synthetic-api:
     image: ghcr.io/tensorplex-labs/dojo-synthetic-api:main
+    container_name: synthetic-api
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     env_file:
       - .env
     expose:
@@ -56,10 +59,10 @@ services:
     logging: *default-logging
 
   prisma-setup-vali:
-    platform: linux/amd64
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile.validator.prisma
+    image: ghcr.io/tensorplex-labs/dojo:main
+    container_name: prisma-setup-vali
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     command: >
       sh -c "prisma migrate deploy && prisma generate"
     working_dir: /app
@@ -75,6 +78,9 @@ services:
 
   validator:
     image: ghcr.io/tensorplex-labs/dojo:main
+    container_name: validator
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
     env_file:
       - .env
     working_dir: /app
@@ -95,3 +101,14 @@ services:
       prisma-setup-vali:
         condition: service_completed_successfully
     logging: *default-logging
+
+  watchtower:
+    image: containrrr/watchtower
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_DEBUG=true
+      - WATCHTOWER_POLL_INTERVAL=3600 # 1hr
+      - WATCHTOWER_LABEL_ENABLE=true
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
