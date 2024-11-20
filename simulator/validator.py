@@ -45,25 +45,23 @@ class ValidatorSim(Validator):
                 logger.error("Multiple failed attempts to get block number, attempting reconnection")
                 if asyncio.get_event_loop().run_until_complete(self._try_reconnect_subtensor()):
                     return self.block
-            
+
             return self._last_block if self._last_block is not None else 0
         except Exception as e:
             logger.error(f"Error getting block number: {e}")
             return self._last_block if self._last_block is not None else 0
-        
 
     def check_registered(self):
         new_subtensor = bt.subtensor(self.subtensor.config)
         if not new_subtensor.is_hotkey_registered(
-            netuid=self.config.netuid,
-            hotkey_ss58=self.wallet.hotkey.ss58_address,
+                netuid=self.config.netuid,
+                hotkey_ss58=self.wallet.hotkey.ss58_address,
         ):
             logger.error(
                 f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}."
                 f" Please register the hotkey using `btcli s register` before trying again"
             )
             exit()
-
 
     async def send_request(
             self,

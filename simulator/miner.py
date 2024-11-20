@@ -13,9 +13,7 @@ from dojo.protocol import (
     FeedbackRequest,
     TaskResultRequest,
     TaskResult,
-    Result,
-    MultiScoreCriteria,
-    CriteriaType
+    Result
 )
 from commons.utils import get_new_uuid
 
@@ -50,11 +48,6 @@ class MinerSim(Miner):
             'no_response': float(os.getenv("SIM_NO_RESP_PROB", 0.1)),
             'timeout': float(os.getenv("SIM_TIMEOUT_PROB", 0.1))
         }
-        
-        self.timeout_range = (
-            float(os.getenv("SIM_MIN_TIMEOUT", 5)),
-            float(os.getenv("SIM_MAX_TIMEOUT", 10))
-        )
 
     async def forward_feedback_request(self, synapse: FeedbackRequest) -> FeedbackRequest:
         try:
@@ -90,25 +83,21 @@ class MinerSim(Miner):
             traceback.print_exc()
             return synapse
 
-    async def forward_task_result_request(self, synapse: TaskResultRequest) -> TaskResultRequest:
+    async def forward_task_result_request(self, synapse: TaskResultRequest) -> TaskResultRequest | None:
         try:
             logger.info(f"Received TaskResultRequest for task id: {synapse.task_id}")
             if not synapse or not synapse.task_id:
                 logger.error("Invalid TaskResultRequest: missing task_id")
-                return synapse
+                return None
 
             # Simulate different response behaviors
             behavior = self._get_response_behavior()
             
-            if behavior == 'no_response':
-                logger.debug(f"Simulating no response for task {synapse.task_id}")
-                return synapse
-                
-            if behavior == 'timeout':
-                # Simulate a timeout by waiting
-                logger.debug(f"Simulating timeout for task {synapse.task_id}")
-                await asyncio.sleep(random.uniform(*self.timeout_range))
-                return synapse
+            if behavior in ['no_response', 'timeout']:
+                logger.debug(f"Simulating {behavior} for task {synapse.task_id}")
+                if behavior == 'timeout':
+                    await asyncio.sleep(30)
+                return None
 
             redis_key = f"feedback:{synapse.task_id}"
             request_data = self.redis_client.get(redis_key)
@@ -118,7 +107,7 @@ class MinerSim(Miner):
 
             if not feedback_request:
                 logger.debug(f"No task result found for task id: {synapse.task_id}")
-                return synapse
+                return None
 
             current_time = datetime.now(timezone.utc).isoformat()
 
@@ -131,7 +120,7 @@ class MinerSim(Miner):
                 
                 task_result = TaskResult(
                     id=get_new_uuid(),
-                    status=self._get_task_status(behavior),
+                    status='COMPLETED',
                     created_at=current_time,
                     updated_at=current_time,
                     result_data=[result],
@@ -151,7 +140,7 @@ class MinerSim(Miner):
         except Exception as e:
             traceback.print_exc()
             logger.error(f"Error handling TaskResultRequest: {e}")
-            return synapse
+            return None
 
     def _get_response_behavior(self) -> str:
         """Determine the response behavior based on configured probabilities."""
@@ -159,13 +148,6 @@ class MinerSim(Miner):
             list(self.response_behaviors.keys()), 
             weights=list(self.response_behaviors.values())
         )[0]
-
-    def _get_task_status(self, behavior: str) -> str:
-        """Determine task status based on behavior."""
-        if behavior in ['timeout', 'no_response']:
-            return 'FAILED'
-        else:
-            return 'COMPLETED'
 
     def _generate_scores(self, ground_truth: dict) -> dict:
         """Generate scores using the specific formula."""
