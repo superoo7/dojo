@@ -154,8 +154,7 @@ class MinerSim(Miner):
         scores = {}
         
         for k, v in ground_truth.items():
-            # Apply the exact formula: int(((int(v + random.uniform(-0.5, 0.5))) / (10 - 1)) * (100 - 1) + 1)
-            score = int(((int(v + random.uniform(-0.5, 0.5))) / (10 - 1)) * (100 - 1) + 1)
+            score = int(((int(v + random.uniform(1, 10))) / (10 - 1)) * (100 - 1) + 1)
             # Ensure score stays within bounds
             score = max(1, min(100, score))
             scores[k] = score
