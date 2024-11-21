@@ -1,9 +1,9 @@
 import argparse
 import asyncio
-import base64
 import hashlib
 import os
 import random
+import re
 import string
 from functools import partial
 
@@ -22,18 +22,10 @@ class Obfuscator:
             + random.choices(string.ascii_letters + string.digits, k=length - 1)
         )
 
-    @staticmethod
-    def simple_encrypt(text, key):
-        return base64.b64encode(bytes([ord(c) ^ key for c in text])).decode()
 
+class HTMLObfuscator(Obfuscator):
     @classmethod
-    def obfuscate(cls, content):
-        raise NotImplementedError("Subclasses must implement this method")
-
-
-class HTMLandJSObfuscator(Obfuscator):
-    @classmethod
-    def obfuscate(cls, html_content):
+    def obfuscate_html(cls, html_content):
         try:
             minify_params = {
                 "do_not_minify_doctype": True,
@@ -69,9 +61,8 @@ class HTMLandJSObfuscator(Obfuscator):
 
             return obfuscated_content
         except Exception as e:
-            logger.error(f"Minification failed: {str(e)}")
-            logger.warning("Falling back to simple minification.")
-            return cls.simple_minify(html_content)
+            logger.error(f"Obfuscation failed for HTML: {str(e)}")
+            return html_content
 
     @classmethod
     def apply_techniques(cls, content):
@@ -120,9 +111,150 @@ class HTMLandJSObfuscator(Obfuscator):
             tag.attrs = dict(random.sample(list(tag.attrs.items()), len(tag.attrs)))
         return soup
 
+
+# Todo: Test further JS obfuscation techniques and enable it
+class JSObfuscator(Obfuscator):
     @staticmethod
     def simple_minify(js_code):
         return jsmin(js_code)
+
+    @classmethod
+    def obfuscate_javascript(cls, html_content: str) -> str:
+        """Find and obfuscate all JavaScript content using BeautifulSoup."""
+        soup = BeautifulSoup(html_content, "html.parser")
+
+        # Find and obfuscate <script> tags
+        for script in soup.find_all("script"):
+            if script.string:  # Only process if there's content
+                script.string = cls.apply_js_obfuscation(script.string)
+
+        # Find and obfuscate inline event handlers
+        for tag in soup.find_all():
+            for attr in list(tag.attrs):
+                if attr.startswith("on"):  # onclick, onload, etc.
+                    tag[attr] = cls.apply_js_obfuscation(tag[attr])
+
+        return str(soup)
+
+    @classmethod
+    def apply_js_obfuscation(cls, js_code: str) -> str:
+        """Apply multiple JavaScript obfuscation techniques."""
+        techniques = [
+            # cls.add_string_encoding,
+            cls.add_dead_code,
+            # cls.add_control_flow_obfuscation,
+            # cls.add_self_defending_code,
+        ]
+
+        obfuscated_code = js_code
+        # Apply 2-3 random techniques
+        for technique in random.sample(techniques, 1):  # random.randint(2, 3)
+            obfuscated_code = technique(obfuscated_code)
+        return obfuscated_code
+
+    @classmethod
+    def add_string_encoding(cls, js_code: str) -> str:
+        """Safely encode string literals using hex encoding."""
+        # Only match simple string literals, avoiding template literals and regex
+        string_pattern = re.compile(r'(["\']).+?\1')
+
+        def encode_string(match):
+            # Get the string without quotes
+            full_str = match.group(0)
+            content = full_str[1:-1]
+
+            # Skip if string is empty or already looks encoded
+            if not content or "\\" in content:
+                return full_str
+
+            # Skip strings that look like HTML IDs, classes, or event names
+            if any(skip in content.lower() for skip in ["#", ".", "on"]):
+                return full_str
+
+            # 30% chance to encode each string
+            if random.random() > 0.3:
+                return full_str
+
+            # Use simple hex encoding which is reliable
+            hex_array = []
+            for char in content:
+                hex_array.append(hex(ord(char)))
+
+            # Create a string from hex values
+            return f"String.fromCharCode({','.join(hex_array)})"
+
+        return string_pattern.sub(encode_string, js_code)
+
+    @classmethod
+    def add_dead_code(cls, js_code: str) -> str:
+        """Add harmless dead code that will be optimized out."""
+        # Dead code that's safe to insert and will be optimized away
+        dead_code_samples = [
+            # "if (false) { console.log('unreachable'); }",
+            "while (false) { break; }",
+            # "try { if (0) throw 0; } catch(e) {}",
+            # f"var _{cls.generate_random_string(5)} = function() {{ return false; }}();",
+            # "switch (false) { case true: break; default: break; }",
+            # "for (var i = 0; i < 0; i++) { console.log(i); }",
+        ]
+
+        # Split code into statements using semicolons
+        statements = js_code.split(";")
+
+        # Only insert after complete statements
+        for _ in range(random.randint(1, 2)):
+            if len(statements) > 1:  # Only if we have multiple statements
+                # Choose a position between statements
+                position = random.randint(1, len(statements) - 1)
+                dead_code = random.choice(dead_code_samples)
+                statements.insert(position, dead_code)
+
+        # Rejoin with semicolons
+        return ";".join(statements)
+
+    @classmethod
+    def add_control_flow_obfuscation(cls, js_code: str) -> str:
+        """Add control flow obfuscation using switch-case or conditional statements."""
+        # Wrap the entire code in a self-executing function with control flow logic
+        switch_var = cls.generate_random_string(5)
+        wrapped_code = f"""
+                        (function() {{
+                            var {switch_var} = {random.randint(1, 100)};
+                            switch({switch_var} % 3) {{
+                                case 0:
+                                    if ({switch_var} % 2) {{
+                                        {js_code}
+                                    }} else {{
+                                        {js_code}
+                                    }}
+                                    break;
+                                case 1:
+                                    while({switch_var}-- > {switch_var}-1) {{
+                                        {js_code}
+                                        break;
+                                    }}
+                                    break;
+                                default:
+                                    {js_code}
+                            }}
+                        }})();
+                        """
+        return wrapped_code
+
+    @classmethod
+    def add_self_defending_code(cls, js_code: str) -> str:
+        """Add code that makes debugging and analysis more difficult."""
+        random_key = cls.generate_random_string(8)
+        protected_code = f"""
+                        (function() {{
+                            var {random_key} = new Date().getTime();
+                            if (new Date().getTime() - {random_key} > 100) {{
+                                return;
+                            }}
+                            {js_code}
+                        }})();
+                        """
+        return protected_code
 
 
 async def obfuscate_html_and_js(html_content, timeout=30):
@@ -139,8 +271,14 @@ async def obfuscate_html_and_js(html_content, timeout=30):
         return html_content  # Return original content if obfuscation times out
 
 
-def _obfuscate_html_and_js_sync(html_content):
-    return HTMLandJSObfuscator.obfuscate(html_content)
+def _obfuscate_html_and_js_sync(content):
+    try:
+        obfuscated_html = HTMLObfuscator.obfuscate_html(content)
+        return obfuscated_html
+    except Exception as e:
+        logger.error(f"Minification failed: {str(e)}")
+        logger.warning("Falling back to simple minification.")
+        return JSObfuscator.simple_minify(content)
 
 
 async def process_file(input_file: str, output_file: str):
