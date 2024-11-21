@@ -185,9 +185,9 @@ def add_args(parser):
     )
 
     parser.add_argument(
-        "--simulation_miner_role",
+        "--simulation_bad_miner",
         action="store_true",
-        help="Set miner role to good or bad for simulation",
+        help="Set miner simluation to a bad one",
     )
 
     epoch_length = 100

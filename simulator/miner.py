@@ -34,8 +34,8 @@ class MinerSim(Miner):
             
             self._configure_simulation()
 
-            self.is_good_miner = get_config().simulation_miner_role
-            logger.info(f"Miner role set to: {'good' if self.is_good_miner else 'bad'}")
+            self.is_bad_miner = get_config().simulation_bad_miner
+            logger.info(f"Miner role set to: {'bad' if self.is_bad_miner else 'good'}")
             
             logger.info("Starting Miner Simulator")
         except Exception as e:
@@ -154,11 +154,10 @@ class MinerSim(Miner):
         scores = {}
         
         for k, v in ground_truth.items():
-            if self.is_good_miner:
-                deviation = random.randint(-2, 2)
-            else:
+            if self.is_bad_miner:
                 deviation = random.randint(-5, 5)
-            
+            else:
+                deviation = random.randint(-2, 2)
             random_score = max(1, min(10, v + deviation))
             score = int((random_score / (10 - 1)) * (100 - 1) + 1)
             scores[k] = score

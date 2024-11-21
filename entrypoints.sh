@@ -28,6 +28,9 @@ if [ "$1" = 'miner' ]; then
     if [ "${FAST_MODE}" = "true" ]; then
         EXTRA_ARGS="${EXTRA_ARGS} --fast_mode"
     fi
+    if [ "${SIMULATION_BAD_MINER}" = "true" ]; then
+        EXTRA_ARGS="${EXTRA_ARGS} --simulation_bad_miner"
+    fi
 
     python main_miner.py \
     --netuid ${NETUID} \
