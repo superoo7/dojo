@@ -150,13 +150,15 @@ class MinerSim(Miner):
         )[0]
 
     def _generate_scores(self, ground_truth: dict) -> dict:
-        """Generate scores using the specific formula."""
         scores = {}
         
         for k, v in ground_truth.items():
-            score = int(((int(v + random.uniform(1, 10))) / (10 - 1)) * (100 - 1) + 1)
-            # Ensure score stays within bounds
-            score = max(1, min(100, score))
+            if v <= 5:
+                random_score = min(10, v + random.randint(0, v))
+            else:
+                random_score = max(1, v - random.randint(0, v // 2))
+            
+            score = int((random_score / (10 - 1)) * (100 - 1) + 1)
             scores[k] = score
         
         return scores
