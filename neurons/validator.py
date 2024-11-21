@@ -193,7 +193,9 @@ class Validator:
                 )
 
                 # Apply obfuscation to each completion's files
-                await Validator._obfuscate_completion_files(shuffled_completions)
+                shuffled_completions = await Validator._obfuscate_completion_files(
+                    shuffled_completions
+                )
 
                 criteria_types = []
                 # ensure criteria options same order as completion_responses
@@ -244,7 +246,7 @@ class Validator:
     @staticmethod
     async def _obfuscate_completion_files(
         completion_responses: List[CompletionResponses],
-    ):
+    ) -> List[CompletionResponses]:
         """Obfuscate HTML files in each completion response."""
         for completion in completion_responses:
             if hasattr(completion.completion, "files"):
@@ -262,6 +264,7 @@ class Validator:
                             )
                         except Exception as e:
                             logger.error(f"Error obfuscating {file.filename}: {e}")
+        return completion_responses
 
     async def get_miner_uids(self, is_external_request: bool, request_id: str):
         async with self._uids_alock:
