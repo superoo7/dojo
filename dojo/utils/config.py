@@ -184,6 +184,12 @@ def add_args(parser):
         help="Whether to run the validator in simulation mode",
     )
 
+    parser.add_argument(
+        "--simulation_miner_role",
+        action="store_true",
+        help="Set miner role to good or bad for simulation",
+    )
+
     epoch_length = 100
     known_args, _ = parser.parse_known_args()
     if known_args := vars(known_args):

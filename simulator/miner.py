@@ -5,8 +5,7 @@ import asyncio
 import random
 import json
 from datetime import datetime, timezone
-from typing import Dict, Optional
-
+from dojo.utils.config import get_config
 from bittensor.btlogging import logging as logger
 from neurons.miner import Miner
 from dojo.protocol import (
@@ -31,11 +30,13 @@ class MinerSim(Miner):
                 db=0,
                 decode_responses=True
             )
-            
-            # Configure simulation parameters
-            self._configure_simulation()
-            
             logger.info("Redis connection established")
+            
+            self._configure_simulation()
+
+            self.is_good_miner = get_config().simulation_miner_role
+            logger.info(f"Miner role set to: {'good' if self.is_good_miner else 'bad'}")
+            
             logger.info("Starting Miner Simulator")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
@@ -153,11 +154,12 @@ class MinerSim(Miner):
         scores = {}
         
         for k, v in ground_truth.items():
-            if v <= 5:
-                random_score = min(10, v + random.randint(0, v))
+            if self.is_good_miner:
+                deviation = random.randint(-2, 2)
             else:
-                random_score = max(1, v - random.randint(0, v // 2))
+                deviation = random.randint(-5, 5)
             
+            random_score = max(1, min(10, v + deviation))
             score = int((random_score / (10 - 1)) * (100 - 1) + 1)
             scores[k] = score
         
