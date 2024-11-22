@@ -47,7 +47,7 @@ miner-pull:
 	docker compose -f docker-compose.miner.yaml pull --include-deps
 
 validator-down:
-	docker compose -f docker-compose.validator.yaml down validator
+	docker compose -f docker-compose.validator.yaml down
 
 miner-decentralised-down:
 	docker compose -f docker-compose.miner.yaml down miner-decentralised
@@ -66,7 +66,7 @@ miner-centralised:
 	docker compose -f docker-compose.miner.yaml up --build -d miner-centralised
 
 validator:
-	docker compose -f docker-compose.validator.yaml up --build -d validator
+	docker compose -f docker-compose.validator.yaml up --build -d validator watchtower
 
 validator-up-deps:
 	docker compose -f docker-compose.validator.yaml up -d --build synthetic-api postgres-vali prisma-setup-vali
