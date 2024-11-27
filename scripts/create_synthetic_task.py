@@ -11,6 +11,7 @@ from dojo.protocol import FeedbackRequest, MultiScoreCriteria, TaskType
 
 async def main():
     data = await SyntheticAPI.get_qa()
+    logger.info(f"@@@ Synthetic QA: {data.augment_type}")
     if data is None:
         logger.error("Failed to generate synthetic data")
         return
@@ -43,6 +44,7 @@ async def main():
         prompt=data.prompt,
         completion_responses=data.responses,
         expire_at=expire_at,
+        augment_type=data.augment_type,
     )
 
     # Serialize the synapse object to JSON

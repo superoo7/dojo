@@ -21,6 +21,7 @@ def _map_synthetic_response(response: dict) -> SyntheticQA:
     mapped_data = {
         "prompt": response["prompt"],
         "ground_truth": response["ground_truth"],
+        "augment_type": response["augment_type"],
     }
 
     responses = list(

@@ -358,6 +358,7 @@ class Validator:
                 prompt=data.prompt,
                 completion_responses=data.responses,
                 expire_at=expire_at,
+                augment_type=data.augment_type,
             )
         elif external_user:
             obfuscated_model_to_model = self.obfuscate_model_names(
@@ -1321,6 +1322,7 @@ class Validator:
                 "num_completions": len(task.request.completion_responses),
                 "scores": score_data,
                 "num_responses": len(task.miner_responses),
+                "augment_type": task.request.augment_type,
             }
         )
 

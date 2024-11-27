@@ -234,6 +234,7 @@ def map_feedback_request_model_to_feedback_request(
                 dojo_task_id=model.dojo_task_id,
                 expire_at=datetime_to_iso8601_str(model.expire_at),
                 axon=bt.TerminalInfo(hotkey=model.hotkey),
+                # augment_type=model.augment_type,
             )
         else:
             feedback_request = FeedbackRequest(
@@ -246,6 +247,7 @@ def map_feedback_request_model_to_feedback_request(
                 expire_at=datetime_to_iso8601_str(model.expire_at),
                 dendrite=bt.TerminalInfo(hotkey=model.hotkey),
                 ground_truth=ground_truth,
+                # augment_type=model.augment_type,
             )
 
         return feedback_request
