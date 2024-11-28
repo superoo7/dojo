@@ -19,7 +19,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-"""
-python main_miner.py --netuid 1 --subtensor.network ws://13.213.1.80:9944 --wallet.name ck_26nov --wallet.hotkey hk_26nov --logging.debug --axon.port 9005 --neuron.type miner --env_file .env.miner --ignore_min_stake
-"""

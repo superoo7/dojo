@@ -108,7 +108,6 @@ class SyntheticQA(BaseModel):
         description="Mapping of unique identifiers to their ground truth values",
         default_factory=dict,
     )
-    augment_type: str
 
     @model_validator(mode="after")
     def verify_completion_ids(self):
@@ -160,7 +159,6 @@ class FeedbackRequest(bt.Synapse):
         description="Mapping of unique identifiers to their ground truth values",
         default_factory=dict,
     )
-    augment_type: str | None = Field(description="the type of augmentation used", default=None)
 
 
 class ScoringResult(bt.Synapse):

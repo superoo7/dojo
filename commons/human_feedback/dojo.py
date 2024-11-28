@@ -167,10 +167,10 @@ class DojoAPI:
                     },
                     timeout=15.0,
                 )
-                logger.info(f"@@@ Response: {response}, {DOJO_API_KEY}")
+
                 response_text = response.text
                 response_json = response.json()
-                logger.info(f"@@@ Response JSON: {response_json}")
+
                 task_ids = []
                 if response.status_code == 200:
                     task_ids = response.json()["body"]
