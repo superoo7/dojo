@@ -50,7 +50,6 @@ model MinerResponse {
     dojo_task_id      String
     hotkey            String
     coldkey           String
-    expire_at         DateTime
     task_result       Json     @db.JsonB
     created_at        DateTime @default(now())
     updated_at        DateTime @updatedAt
@@ -59,7 +58,6 @@ model MinerResponse {
     validator_task_relation ValidatorTask @relation(fields: [validator_task_id], references: [id])
     Score                   MinerScore[]
 
-    @@index([expire_at])
     @@map("miner_response")
 }
 
