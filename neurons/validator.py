@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import gc
+import json
 import math
 import random
 import time
@@ -24,6 +25,7 @@ from torch.nn import functional as F
 from websocket import create_connection
 
 import dojo
+from commons.cache import RedisCache
 from commons.dataset.synthetic import SyntheticAPI
 from commons.exceptions import (
     EmptyScores,
@@ -1311,6 +1313,19 @@ class Validator:
             ),
         }
 
+        # query redis for augment_type
+        cache = RedisCache()
+        augment_key = f"synthetic:augment_type:{task.request.completion_responses[0].completion_id}"
+        try:
+            augment_response = await cache.get(f"{augment_key}")
+            logger.info(f"@@@ augment_key: {augment_key}")
+            logger.info(f"@@: {augment_response}")
+        except Exception as e:
+            logger.error(f"Error getting augment_type for {augment_key}: {e}")
+            raise e
+
+        augment_type = json.loads(augment_response)["augment_type"]  # type: ignore
+        logger.info(f"@@@ augment_type for {augment_key}: {augment_type}")
         wandb_data = jsonable_encoder(
             {
                 "request_id": task.request.request_id,
@@ -1321,6 +1336,7 @@ class Validator:
                 "num_completions": len(task.request.completion_responses),
                 "scores": score_data,
                 "num_responses": len(task.miner_responses),
+                "augment_type": augment_type,
             }
         )
 
