@@ -150,6 +150,7 @@ async def migrate():
 
                 # Convert MULTI_SCORE to SCORE
                 criteria_type = old_criterion.type
+                config = None
                 if criteria_type == "MULTI_SCORE":
                     criteria_type = "SCORE"
                     config = json.dumps(

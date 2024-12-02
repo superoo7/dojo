@@ -31,6 +31,7 @@ from commons.exceptions import (
     NoNewExpiredTasksYet,
     SetWeightsFailed,
 )
+from commons.logging.wandb import init_wandb
 from commons.obfuscation.obfuscation_utils import obfuscate_html_and_js
 from commons.objects import ObjectManager
 from commons.orm import ORM
@@ -40,7 +41,6 @@ from commons.utils import (
     datetime_as_utc,
     get_epoch_time,
     get_new_uuid,
-    init_wandb,
     initialise,
     set_expire_time,
     ttl_get_block,
@@ -89,8 +89,11 @@ class Validator:
 
         self.wallet, self.subtensor, self.metagraph, self.axon = initialise(self.config)
 
+        # Save validator hotkey
+        self.vali_hotkey = self.wallet.hotkey.ss58_address
+
         # Each miner gets a unique identity (UID) in the network for differentiation.
-        self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+        self.uid = self.metagraph.hotkeys.index(self.vali_hotkey)
         logger.info(
             f"Running neuron on subnet: {self.config.netuid} with uid {self.uid}"
         )
@@ -138,40 +141,6 @@ class Validator:
                 completion.completion_id
             )
         return obfuscated_model_to_model
-
-    async def send_heartbeats(self):
-        """Perform a health check periodically to ensure miners are reachable"""
-        while True:
-            await asyncio.sleep(dojo.VALIDATOR_HEARTBEAT)
-            try:
-                all_miner_uids = extract_miner_uids(metagraph=self.metagraph)
-                logger.debug(f"Sending heartbeats to {len(all_miner_uids)} miners")
-                axons: list[bt.AxonInfo] = [
-                    self.metagraph.axons[uid]
-                    for uid in all_miner_uids
-                    if self.metagraph.axons[uid].hotkey.casefold()
-                    != self.wallet.hotkey.ss58_address.casefold()
-                ]
-
-                responses: List[Heartbeat] = await self.dendrite.forward(  # type: ignore
-                    axons=axons, synapse=Heartbeat(), deserialize=False, timeout=12
-                )
-                active_hotkeys = [r.axon.hotkey for r in responses if r.ack and r.axon]
-                active_uids = [
-                    uid
-                    for uid, axon in enumerate(self.metagraph.axons)
-                    if axon.hotkey in active_hotkeys
-                ]
-                async with self._uids_alock:
-                    self._active_miner_uids = set(active_uids)
-                logger.debug(
-                    f"⬇️ Heartbeats acknowledged by active miners: {sorted(active_uids)}"
-                )
-            except Exception as e:
-                logger.error(
-                    f"Error in sending heartbeats: {e}, traceback: {traceback.format_exc()}"
-                )
-                pass
 
     @staticmethod
     async def _send_shuffled_requests(
@@ -312,7 +281,7 @@ class Validator:
             self.metagraph.axons[uid]
             for uid in sel_miner_uids
             if self.metagraph.axons[uid].hotkey.casefold()
-            != self.wallet.hotkey.ss58_address.casefold()
+            != self.vali_hotkey.casefold()
         ]
         if not len(axons):
             logger.warning("🤷 No axons to query ... skipping")
@@ -411,7 +380,7 @@ class Validator:
 
         # include the ground_truth to keep in data manager
         synapse.ground_truth = data.ground_truth
-        synapse.dendrite.hotkey = self.wallet.hotkey.ss58_address
+        synapse.dendrite.hotkey = self.vali_hotkey
         response_data = DendriteQueryResponse(
             request=synapse,
             miner_responses=valid_miner_responses,
@@ -772,13 +741,6 @@ class Validator:
             logger.error(f"Failed to load validator state: {e}")
             pass
 
-    async def log_validator_status(self):
-        while not self._should_exit:
-            logger.info(
-                f"Validator running... block:{str(self.block)} time: {time.time()}"
-            )
-            await asyncio.sleep(dojo.VALIDATOR_STATUS)
-
     async def _get_task_results_from_miner(
         self, miner_hotkey: str, task_id: str
     ) -> list[TaskResult]:
@@ -867,18 +829,6 @@ class Validator:
             self.block - self.metagraph.last_update[self.uid]
         ) > self.config.neuron.epoch_length
 
-    def check_registered(self):
-        # --- Check for registration.
-        if not self.subtensor.is_hotkey_registered(
-            netuid=self.config.netuid,
-            hotkey_ss58=self.wallet.hotkey.ss58_address,
-        ):
-            logger.error(
-                f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}."
-                f" Please register the hotkey using `btcli s register` before trying again"
-            )
-            exit()
-
     async def sync(self):
         self.check_registered()
 
@@ -933,6 +883,57 @@ class Validator:
     # ---------------------------------------------------------------------------- #
     #                         VALIDATOR CORE FUNCTIONS                             #
     # ---------------------------------------------------------------------------- #
+    async def log_validator_status(self):
+        while not self._should_exit:
+            logger.info(
+                f"Validator running... block:{str(self.block)} time: {time.time()}"
+            )
+            await asyncio.sleep(dojo.VALIDATOR_STATUS)
+
+    async def send_heartbeats(self):
+        """Perform a health check periodically to ensure and check which miners are reachable"""
+        while True:
+            await asyncio.sleep(dojo.VALIDATOR_HEARTBEAT)
+            try:
+                all_miner_uids = extract_miner_uids(metagraph=self.metagraph)
+                logger.debug(f"Sending heartbeats to {len(all_miner_uids)} miners")
+
+                axons: list[bt.AxonInfo] = [
+                    self.metagraph.axons[uid]
+                    for uid in all_miner_uids
+                    if self.metagraph.axons[uid].hotkey.casefold()
+                    != self.vali_hotkey.casefold()
+                ]
+
+                # Send heartbeats in batches
+                batch_size = 10
+                active_hotkeys = set()
+
+                for i in range(0, len(axons), batch_size):
+                    batch = axons[i : i + batch_size]
+                    responses: List[Heartbeat] = await self.dendrite.forward(
+                        axons=batch, synapse=Heartbeat(), deserialize=False, timeout=12
+                    )
+                    # Process batch responses
+                    active_hotkeys.update(
+                        r.axon.hotkey for r in responses if r and r.ack and r.axon
+                    )
+
+                active_uids = {
+                    uid
+                    for uid, axon in enumerate(self.metagraph.axons)
+                    if axon.hotkey in active_hotkeys
+                }
+
+                async with self._uids_alock:
+                    self._active_miner_uids = active_uids
+
+                logger.debug(
+                    f"⬇️ Heartbeats acknowledged by active miners: {sorted(active_uids)}"
+                )
+            except Exception as e:
+                logger.error(f"Error in sending heartbeats: {e}", exc_info=True)
+
     async def update_score_and_send_feedback(self):
         while True:
             await asyncio.sleep(dojo.VALIDATOR_UPDATE_SCORE)
@@ -1047,6 +1048,30 @@ class Validator:
     # ---------------------------------------------------------------------------- #
     #                         VALIDATOR HELPER FUNCTIONS                           #
     # ---------------------------------------------------------------------------- #
+
+    # Validator Setup Functions
+    def check_registered(self) -> bool:
+        """
+        Check if the validator's hotkey is registered on the network.
+        Returns True if registered, raises ValueError if not.
+        """
+        try:
+            is_registered = self.subtensor.is_hotkey_registered(
+                netuid=self.config.netuid,
+                hotkey_ss58=self.vali_hotkey,
+            )
+            if not is_registered:
+                raise ValueError(
+                    f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}. "
+                    f"Please register the hotkey using `btcli s register` before trying again"
+                )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to check registration status: {str(e)}")
+            raise
+
+    # Validator update_score_and_send_feedback helper functions
     def _get_validator_hotkeys(self) -> List[str]:
         """Get the hotkeys of the validators in the metagraph.
 
@@ -1058,7 +1083,7 @@ class Validator:
             if not is_miner(self.metagraph, uid)
         ]
         if get_config().ignore_min_stake:
-            validator_hotkeys.append(self.wallet.hotkey.ss58_address)
+            validator_hotkeys.append(self.vali_hotkey)
         return validator_hotkeys
 
     async def _get_task_batches(
