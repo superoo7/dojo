@@ -31,12 +31,12 @@ class MinerSim(Miner):
                 decode_responses=True
             )
             logger.info("Redis connection established")
-            
+
             self._configure_simulation()
 
             self.is_bad_miner = get_config().simulation_bad_miner
             logger.info(f"Miner role set to: {'bad' if self.is_bad_miner else 'good'}")
-            
+
             logger.info("Starting Miner Simulator")
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
@@ -93,7 +93,7 @@ class MinerSim(Miner):
 
             # Simulate different response behaviors
             behavior = self._get_response_behavior()
-            
+
             if behavior in ['no_response', 'timeout']:
                 logger.debug(f"Simulating {behavior} for task {synapse.task_id}")
                 if behavior == 'timeout':
@@ -118,7 +118,7 @@ class MinerSim(Miner):
                     type=criteria_type.type,
                     value=self._generate_scores(feedback_request.ground_truth)
                 )
-                
+
                 task_result = TaskResult(
                     id=get_new_uuid(),
                     status='COMPLETED',
@@ -135,7 +135,7 @@ class MinerSim(Miner):
 
             self.redis_client.delete(redis_key)
             logger.debug(f"Processed task result for task {synapse.task_id}")
-            
+
             return synapse
 
         except Exception as e:
@@ -146,13 +146,13 @@ class MinerSim(Miner):
     def _get_response_behavior(self) -> str:
         """Determine the response behavior based on configured probabilities."""
         return random.choices(
-            list(self.response_behaviors.keys()), 
+            list(self.response_behaviors.keys()),
             weights=list(self.response_behaviors.values())
         )[0]
 
     def _generate_scores(self, ground_truth: dict) -> dict:
         scores = {}
-        
+
         for k, v in ground_truth.items():
             if self.is_bad_miner:
                 deviation = random.randint(-5, 5)
@@ -161,7 +161,7 @@ class MinerSim(Miner):
             random_score = max(1, min(10, v + deviation))
             score = int((random_score / (10 - 1)) * (100 - 1) + 1)
             scores[k] = score
-        
+
         return scores
 
     # def __del__(self):
