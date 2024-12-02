@@ -1,7 +1,6 @@
 import asyncio
 import copy
 import gc
-import json
 import math
 import random
 import time
@@ -1313,18 +1312,18 @@ class Validator:
             ),
         }
 
-        # query redis for augment_type
+        # query redis for augment_type before inserting into wandb
         cache = RedisCache()
         augment_key = f"synthetic:augment_type:{task.request.completion_responses[0].completion_id}"
         try:
             augment_response = await cache.get(f"{augment_key}")
-            logger.info(f"@@@ augment_key: {augment_key}")
-            logger.info(f"@@: {augment_response}")
+            # logger.info(f"@@@ augment_key: {augment_key}")
+            # logger.info(f"@@: {augment_response}")
         except Exception as e:
             logger.error(f"Error getting augment_type for {augment_key}: {e}")
             raise e
 
-        augment_type = json.loads(augment_response)["augment_type"]  # type: ignore
+        augment_type = augment_response["augment_type"]  # type: ignore
         logger.info(f"@@@ augment_type for {augment_key}: {augment_type}")
         wandb_data = jsonable_encoder(
             {
