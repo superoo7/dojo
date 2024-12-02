@@ -1312,10 +1312,10 @@ class Validator:
             ),
         }
 
-        # query redis for augment_type before inserting into wandb
-        cache = RedisCache()
-        augment_key = f"synthetic:augment_type:{task.request.completion_responses[0].completion_id}"
         try:
+            # query redis for augment_type before inserting into wandb
+            cache = RedisCache()
+            augment_key = f"synthetic:augment_type:{task.request.completion_responses[0].completion_id}"
             augment_response = await cache.get(f"{augment_key}")
             # logger.info(f"@@@ augment_key: {augment_key}")
             # logger.info(f"@@: {augment_response}")
