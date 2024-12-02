@@ -1324,7 +1324,7 @@ class Validator:
             raise e
 
         augment_type = augment_response["augment_type"]  # type: ignore
-        logger.info(f"@@@ augment_type for {augment_key}: {augment_type}")
+        # logger.info(f"@@@ augment_type for {augment_key}: {augment_type}")
         wandb_data = jsonable_encoder(
             {
                 "request_id": task.request.request_id,
