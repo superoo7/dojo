@@ -333,8 +333,12 @@ def set_expire_time(expire_in_seconds: int) -> str:
     Returns:
         str: The expiration time in ISO 8601 format with 'Z' as the UTC indicator.
     """
-    expiry_time = datetime.now(timezone.utc) + timedelta(seconds=expire_in_seconds)
-    return datetime_to_iso8601_str(expiry_time)
+    return (
+        (datetime.now(timezone.utc) + timedelta(seconds=expire_in_seconds))
+        .replace(tzinfo=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def is_valid_expiry(expire_at: str) -> bool:
