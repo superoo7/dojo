@@ -92,13 +92,13 @@ class MinerSim(Miner):
                 return None
 
             # Simulate different response behaviors
-            behavior = self._get_response_behavior()
+            # behavior = self._get_response_behavior()
 
-            if behavior in ['no_response', 'timeout']:
-                logger.debug(f"Simulating {behavior} for task {synapse.task_id}")
-                if behavior == 'timeout':
-                    await asyncio.sleep(30)
-                return None
+            # if behavior in ['no_response', 'timeout']:
+            #     logger.debug(f"Simulating {behavior} for task {synapse.task_id}")
+            #     if behavior == 'timeout':
+            #         await asyncio.sleep(30)
+            #     return None
 
             redis_key = f"feedback:{synapse.task_id}"
             request_data = self.redis_client.get(redis_key)
