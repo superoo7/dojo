@@ -249,7 +249,7 @@ class ValidatorSim(Validator):
                         axons=[axon],
                         synapse=synapse,
                         deserialize=False,
-                        timeout=12,
+                        timeout=60,
                     )
                 )
 
