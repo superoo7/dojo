@@ -1,4 +1,3 @@
-import logging
 import traceback
 from typing import List
 import aiohttp
@@ -112,17 +111,40 @@ class ValidatorSim(Validator):
                 logger.error(f"Error during sync: {e}")
                 return
 
-    def check_registered(self):
-        new_subtensor = bt.subtensor(self.subtensor.config)
-        if not new_subtensor.is_hotkey_registered(
-                netuid=self.config.netuid,
-                hotkey_ss58=self.wallet.hotkey.ss58_address,
-        ):
-            logger.error(
-                f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}."
-                f" Please register the hotkey using `btcli s register` before trying again"
-            )
-            exit()
+    async def check_registered(self):
+        """Check if hotkey is registered with proper connection management"""
+        max_attempts = 3
+        attempt = 0
+        
+        while attempt < max_attempts:
+            try:
+                if not await self._ensure_subtensor_connection():
+                    logger.warning("Cannot check registration - no connection to subtensor")
+                    attempt += 1
+                    continue
+                    
+                if not self.subtensor.is_hotkey_registered(
+                    netuid=self.config.netuid,
+                    hotkey_ss58=self.wallet.hotkey.ss58_address,
+                ):
+                    logger.error(
+                        f"Wallet: {self.wallet} is not registered on netuid {self.config.netuid}."
+                        f" Please register the hotkey using `btcli s register` before trying again"
+                    )
+                    exit()
+                return
+                
+            except BrokenPipeError:
+                attempt += 1
+                if attempt < max_attempts:
+                    logger.warning(f"BrokenPipeError during registration check, attempt {attempt}/{max_attempts}")
+                    await self._ensure_subtensor_connection()
+                else:
+                    logger.error("Max attempts reached during registration check")
+                    exit()
+            except Exception as e:
+                logger.error(f"Error during registration check: {e}")
+                exit()
 
     async def send_request(
             self,
