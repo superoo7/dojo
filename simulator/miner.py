@@ -152,16 +152,17 @@ class MinerSim(Miner):
 
     def _generate_scores(self, ground_truth: dict) -> dict:
         scores = {}
+        max_rank = max(ground_truth.values())
 
         for k, v in ground_truth.items():
+            base_weight = 10 - (v * (10 / max_rank))
             if self.is_bad_miner:
                 deviation = random.randint(-5, 5)
             else:
                 deviation = random.randint(-2, 2)
-            random_score = max(1, min(10, v + deviation))
-            score = int((random_score / (10 - 1)) * (100 - 1) + 1)
+            random_score = max(0, min(10, base_weight + deviation))
+            score = int((random_score / 10) * 99 + 1)
             scores[k] = score
-
         return scores
 
     # def __del__(self):
