@@ -47,7 +47,7 @@ if MAX_CHUNK_SIZE_MB is None:
 class Row(BaseModel):
     prompt: str
     completions: list[CompletionResponses]
-    # shape (num_completions, num_miners)
+    # shape (num_miners, num_completions)
     raw_scores: list[list[float]]
     # shape (num_completions)
     mean_scores: list[float]
