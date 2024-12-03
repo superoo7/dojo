@@ -8,7 +8,7 @@ from commons.orm import ORM
 from commons.utils import get_epoch_time, get_new_uuid, set_expire_time, ttl_get_block
 from dojo.protocol import FeedbackRequest, TaskType, MultiScoreCriteria, DendriteQueryResponse
 from neurons.validator import Validator
-from bittensor.btlogging import logging as logger
+from bittensor.utils.btlogging import logging as logger
 from tenacity import RetryError
 import bittensor as bt
 import asyncio
@@ -54,23 +54,63 @@ class ValidatorSim(Validator):
 
     @property
     def block(self):
+        """Get the current block number synchronously"""
         try:
             self._last_block = ttl_get_block(self.subtensor)
             self._block_check_attempts = 0
             return self._last_block
         except BrokenPipeError:
+            # Create task for reconnection but don't wait for it
             asyncio.create_task(self._ensure_subtensor_connection())
             return self._last_block if self._last_block is not None else 0
         except Exception as e:
             logger.error(f"Error getting block number: {e}")
             return self._last_block if self._last_block is not None else 0
 
+    async def get_block_with_retry(self):
+        """Get the current block number with retry logic for BrokenPipeError"""
+        max_attempts = 3
+        attempt = 0
+        while attempt < max_attempts:
+            try:
+                self._last_block = ttl_get_block(self.subtensor)
+                self._block_check_attempts = 0
+                return self._last_block
+            except BrokenPipeError:
+                attempt += 1
+                if attempt < max_attempts:
+                    logger.warning(f"BrokenPipeError getting block, attempt {attempt}/{max_attempts}")
+                    await self._ensure_subtensor_connection()
+                    await asyncio.sleep(1)  # Brief delay before retry
+                else:
+                    logger.error("Max attempts reached getting block number")
+                    return self._last_block if self._last_block is not None else 0
+            except Exception as e:
+                logger.error(f"Error getting block number: {e}")
+                return self._last_block if self._last_block is not None else 0
+
     async def sync(self):
-        if not await self._ensure_subtensor_connection():
-            logger.warning("Cannot sync - no connection to subtensor")
-            return
-            
-        await super().sync()
+        """Sync with retry logic for BrokenPipeError"""
+        max_attempts = 3
+        attempt = 0
+        while attempt < max_attempts:
+            try:
+                if not await self._ensure_subtensor_connection():
+                    logger.warning("Cannot sync - no connection to subtensor")
+                    continue
+                await super().sync()
+                return
+            except BrokenPipeError:
+                attempt += 1
+                if attempt < max_attempts:
+                    logger.warning(f"BrokenPipeError during sync, attempt {attempt}/{max_attempts}")
+                    await self._ensure_subtensor_connection()
+                else:
+                    logger.error("Max attempts reached during sync")
+                    return
+            except Exception as e:
+                logger.error(f"Error during sync: {e}")
+                return
 
     def check_registered(self):
         new_subtensor = bt.subtensor(self.subtensor.config)

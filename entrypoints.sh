@@ -62,6 +62,9 @@ if [ "$1" = 'validator' ]; then
     if [ "${FAST_MODE}" = "true" ]; then
         EXTRA_ARGS="${EXTRA_ARGS} --fast_mode"
     fi
+    if [ "${SAMPLE_SIZE}" != "" ]; then
+        EXTRA_ARGS="${EXTRA_ARGS} --neuron.sample_size ${SAMPLE_SIZE}"
+    fi
 
     python main_validator.py \
     --netuid ${NETUID} \

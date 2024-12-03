@@ -6,7 +6,7 @@ import random
 import json
 from datetime import datetime, timezone
 from dojo.utils.config import get_config
-from bittensor.btlogging import logging as logger
+from bittensor.utils.btlogging import logging as logger
 from neurons.miner import Miner
 from dojo.protocol import (
     FeedbackRequest,
