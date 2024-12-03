@@ -161,7 +161,7 @@ class MinerSim(Miner):
             else:
                 deviation = random.randint(-2, 2)
             random_score = max(0, min(10, base_weight + deviation))
-            score = int((random_score / 10) * 99 + 1)
+            score = int((random_score / (10 - 1)) * (100 - 1) + 1)
             scores[k] = score
         return scores
 
