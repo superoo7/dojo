@@ -31,6 +31,10 @@ BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 MAX_CHUNK_SIZE_MB = int(os.getenv("MAX_CHUNK_SIZE_MB", 50))
 
 
+def verify_hotkey_in_metagraph(hotkey: str) -> bool:
+    return hotkey in metagraph.hotkeys
+
+
 def verify_signature(hotkey: str, signature: str, message: str) -> bool:
     keypair = Keypair(ss58_address=hotkey, ss58_format=42)
     if not keypair.verify(data=message, signature=signature):
@@ -73,6 +77,22 @@ async def upload_dataset(
         if not signature.startswith("0x"):
             raise HTTPException(
                 status_code=401, detail="Invalid signature format, must be hex."
+            )
+
+        if not verify_signature(hotkey, signature, message):
+            logger.error(f"Invalid signature for address={hotkey}")
+            raise HTTPException(status_code=401, detail="Invalid signature.")
+
+        if not verify_hotkey_in_metagraph(hotkey):
+            logger.error(f"Hotkey {hotkey} not found in metagraph")
+            raise HTTPException(
+                status_code=401, detail="Hotkey not found in metagraph."
+            )
+
+        if not check_stake(hotkey):
+            logger.error(f"Insufficient stake for hotkey {hotkey}")
+            raise HTTPException(
+                status_code=401, detail="Insufficient stake for hotkey."
             )
 
         session = aioboto3.Session(region_name=AWS_REGION)
