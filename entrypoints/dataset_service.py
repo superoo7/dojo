@@ -107,7 +107,7 @@ async def upload_dataset(
                         detail=f"File too large. Maximum size is {MAX_CHUNK_SIZE_MB}MB",
                     )
 
-                filename = f"{file.filename}"
+                filename = f"hotkey_{hotkey}_{file.filename}"
 
                 await bucket.put_object(
                     Key=filename,
