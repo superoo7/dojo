@@ -8,11 +8,11 @@ name = "dojo"
 description = "dojo subnet"
 readme = "README.md"
 authors = [
-  { name = "jarvis8x7b" },
-  { name = "karootplx" },
-  { name = "codebender37" }
+  {name = "jarvis8x7b"},
+  {name = "karootplx"},
+  {name = "codebender37"}
 ]
-license = { text = "MIT" }
+license = {text = "MIT"}
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -144,15 +144,15 @@ select = [
   "E4", # import-related errors (e.g., unused imports, import order)
   "E7", # statement-related errors (e.g., multiple statements on one line)
   "E9", # runtime errors (e.g., syntax errors, undefined names)
-  "F",  # pyflakes errors (e.g., unused variables, undefined names)
+  "F", # pyflakes errors (e.g., unused variables, undefined names)
   "UP", # pyupgrade rules (suggests newer python syntax)
-  "I"   # isort rules (sorts and organizes imports)
+  "I" # isort rules (sorts and organizes imports)
 ]
 ignore = [
   "UP006", # Preserve 'typing.Tuple' instead of 'tuple'
   "UP035", # Preserve 'typing.Dict' instead of 'dict'
-  "C901",  # Ignore McCabe complexity (if you use flake8 complexity checks)
-  "E203"   # Ignore whitespace before ':', conflicts with Black] # Ignore specific pyupgrade rules that prevent the project from running
+  "C901", # Ignore McCabe complexity (if you use flake8 complexity checks)
+  "E203" # Ignore whitespace before ':', conflicts with Black] # Ignore specific pyupgrade rules that prevent the project from running
 ]
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
@@ -163,7 +163,7 @@ unfixable = []
 known-third-party = ["wandb"]
 
 [tool.setuptools]
-packages = { find = {} }
+packages = {find = {}}
 include-package-data = true
 # allows us to use CLI even though it is a standalone script
 py-modules = ["dojo_cli"]
