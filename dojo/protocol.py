@@ -201,6 +201,12 @@ class TaskSynapseObject(bt.Synapse):
         description="Mapping of unique identifiers to their ground truth values",
         default_factory=dict,
     )
+    miner_hotkey: str = Field(
+        description="Hotkey of the miner that created the task", default=None
+    )
+    miner_coldkey: str = Field(
+        description="Coldkey of the miner that created the task", default=None
+    )
 
 
 class ScoringResult(bt.Synapse):

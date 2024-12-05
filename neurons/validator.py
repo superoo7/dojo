@@ -909,28 +909,32 @@ class Validator:
         self,
         synapse: TaskSynapseObject | None = None,
         ground_truth: dict[str, int] | None = None,
-        external_user: bool = False,
     ):
-        if len(self._active_miner_uids) == 0:
+        if not synapse:
+            logger.warning("No synapse provided... skipping")
+            return
+
+        if not self._active_miner_uids:
             logger.info("No active miners to send request to... skipping")
             return
 
         start = get_epoch_time()
-        sel_miner_uids = await self.get_miner_uids(external_user, synapse.task_id)
+        # sel_miner_uids = await self.get_miner_uids(external_user, synapse.task_id)
         sel_miner_uids = sorted(list(self._active_miner_uids))
 
         axons = [
-            self.metagraph.axons[uid]
+            axon
             for uid in sel_miner_uids
-            if self.metagraph.axons[uid].hotkey.casefold()
+            if (axon := self.metagraph.axons[uid]).hotkey.casefold()
             != self.vali_hotkey.casefold()
         ]
-        if not len(axons):
+
+        if not axons:
             logger.warning("🤷 No axons to query ... skipping")
             return
 
         logger.info(
-            f"⬆️ Sending feedback request for request id: {synapse.task_id}, miners uids:{sel_miner_uids} with expire_at: {synapse.expire_at}"
+            f"⬆️ Sending task request for request id: {synapse.task_id}, miners uids:{sel_miner_uids} with expire_at: {synapse.expire_at}"
         )
 
         miner_responses: List[TaskSynapseObject] = await self._send_shuffled_requests(
@@ -938,23 +942,23 @@ class Validator:
         )
 
         valid_miner_responses: List[TaskSynapseObject] = []
-        try:
-            for miner_response in miner_responses:
-                miner_hotkey = (
-                    miner_response.axon.hotkey if miner_response.axon else "??"
-                )
-
-                if miner_response.dojo_task_id is None:
-                    logger.debug(f"No dojo task id created for miner {miner_hotkey}")
+        for response in miner_responses:
+            try:
+                if not response.dojo_task_id:
                     continue
 
-                valid_miner_responses.append(miner_response)
-        except Exception as e:
-            logger.error(f"Error in validating miner responses: {e}")
-            pass
+                response.miner_hotkey = response.axon.hotkey if response.axon else None
+                response.miner_coldkey = (
+                    response.axon.coldkey if response.axon else None
+                )
+                valid_miner_responses.append(response)
+
+            except Exception as e:
+                logger.error(f"Error processing miner response: {e}")
+                continue
 
         logger.info(f"⬇️ Received {len(valid_miner_responses)} valid responses")
-        if valid_miner_responses is None or len(valid_miner_responses) == 0:
+        if not valid_miner_responses:
             logger.info("No valid miner responses to process... skipping")
             return
 
@@ -963,17 +967,14 @@ class Validator:
         synapse.dendrite.hotkey = self.vali_hotkey
 
         logger.debug("Attempting to saving dendrite response")
-        vali_request_model = await ORM.save_task(
+        if not await ORM.save_task(
             validator_task=synapse,
             miner_responses=valid_miner_responses,
             ground_truth=ground_truth,
-        )
-
-        if vali_request_model is None:
+        ):
             logger.error("Failed to save dendrite response")
             return
 
-        # saving response
         logger.success(f"Saved dendrite response for task id: {synapse.task_id}")
         logger.info(
             f"Sending request to miners & processing took {get_epoch_time() - start}"

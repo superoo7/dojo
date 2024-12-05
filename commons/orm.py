@@ -11,25 +11,20 @@ from commons.exceptions import (
 )
 from commons.utils import datetime_as_utc
 from database.client import prisma, transaction
-
-# from database.mappers import (
-#     map_child_feedback_request_to_model,
-#     map_completion_response_to_model,
-#     map_criteria_type_to_model,
-#     map_feedback_request_model_to_feedback_request,
-#     map_parent_feedback_request_to_model,
-# )
-from database.prisma import Json
+from database.mappers import (
+    map_task_synapse_object_to_miner_response,
+    map_task_synapse_object_to_validator_task,
+)
 from database.prisma.errors import PrismaError
 from database.prisma.models import (
     GroundTruth,
-    MinerResponse,
     ValidatorTask,
 )
 from database.prisma.types import (
     ValidatorTaskWhereInput,
 )
 from dojo import TASK_DEADLINE
+from dojo.protocol import TaskSynapseObject
 
 
 class ORM:
@@ -344,8 +339,8 @@ class ORM:
 
     @staticmethod
     async def save_task(
-        validator_task: ValidatorTask,
-        miner_responses: List[MinerResponse],
+        validator_task: TaskSynapseObject,
+        miner_responses: List[TaskSynapseObject],
         ground_truth: dict[str, int],
     ) -> ValidatorTask | None:
         """Saves a task, which consists of both the validator's request and the miners' responses.
@@ -362,69 +357,35 @@ class ORM:
             async with prisma.tx(timeout=timedelta(seconds=30)) as tx:
                 logger.trace("Starting transaction for saving task.")
 
-                # Create validator task
-                created_task = await tx.validatortask.create(
-                    data={
-                        "prompt": validator_task.prompt,
-                        "task_type": validator_task.task_type,
-                        "expire_at": validator_task.expire_at,
-                        "is_processed": False,
-                    }
+                # Map validator task using mapper function
+                validator_task_data = map_task_synapse_object_to_validator_task(
+                    validator_task
                 )
+                created_task = await tx.validatortask.create(data=validator_task_data)
 
-                # Create completions for validator task
-                for completion in validator_task.completions:
-                    completion_data = {
-                        "validator_task_id": created_task.id,
-                        "model": completion.model,
-                        "completion": Json(completion.completion.model_dump()),
-                    }
-                    created_completion = await tx.completion.create(
-                        data=completion_data
-                    )
-
-                    # Create criteria for each completion
-                    for criterion in completion.criterion:
-                        criterion_data = {
-                            "completion_id": created_completion.id,
-                            "criteria_type": criterion.criteria_type,
-                            "config": Json(criterion.config.model_dump()),
-                        }
-                        await tx.criterion.create(data=criterion_data)
-
-                # Create miner responses
+                # Pre-process all valid miner responses
+                valid_miner_data = []
                 for miner_response in miner_responses:
                     try:
-                        # Create miner response record
-                        miner_data = {
-                            "validator_task_id": created_task.id,
-                            "dojo_task_id": miner_response.dojo_task_id,
-                            "hotkey": miner_response.hotkey,
-                            "coldkey": miner_response.coldkey,
-                            "task_result": Json(
-                                miner_response.task_result.model_dump()
-                            ),
-                        }
-                        await tx.minerresponse.create(data=miner_data)
-
-                    except InvalidMinerResponse as e:
-                        miner_hotkey = (
-                            miner_response.hotkey if miner_response.hotkey else "??"
+                        miner_data = map_task_synapse_object_to_miner_response(
+                            miner_response,
+                            created_task.id,
                         )
+                        valid_miner_data.append(miner_data)
+                    except InvalidMinerResponse as e:
+                        miner_hotkey = getattr(miner_response, "miner_hotkey", "??")
                         logger.debug(
                             f"Miner response from hotkey: {miner_hotkey} is invalid: {e}"
                         )
 
-                # Create ground truth records
-                for completion_id, rank_id in ground_truth.items():
-                    gt_data = {
-                        "validator_task_id": created_task.id,
-                        "obfuscated_model_id": completion_id,
-                        "real_model_id": completion_id,
-                        "rank_id": rank_id,
-                        # "ground_truth_score": 1.0,  # Default score, adjust as needed
-                    }
-                    await tx.groundtruth.create(data=gt_data)
+                if valid_miner_data:
+                    # Bulk create all miner responses
+                    await tx.minerresponse.create_many(
+                        data=[
+                            {**miner_data, "validator_task_id": created_task.id}
+                            for miner_data in valid_miner_data
+                        ]
+                    )
 
                 return created_task
 
